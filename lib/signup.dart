@@ -11,62 +11,88 @@ class _SignUpPageState extends State<SignUpPage> {
   final TextEditingController _firstnameController = TextEditingController();
   final TextEditingController _lastnameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _collegeHandledController =
-      TextEditingController(); // New controller for College Handled
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController =
       TextEditingController();
 
-  // Function to insert a new guidance counselor into the database
+  // Add a variable for the selected college
+  String? _selectedCollege;
+  final List<String> _colleges = [
+    "College of Computer Studies",
+    "College of Music",
+    "College of Engineering and Architecture",
+    "College of Accounting and Business Education",
+    "College of Arts and Humanities",
+    "College of Human Environmental Sciences and Food Studies",
+    "College of Medical and Biological Science",
+    "College of Nursing",
+    "College of Pharmacy and Chemistry",
+    "College of Teacher Education"
+  ];
+
   Future<void> _signUp() async {
     final firstname = _firstnameController.text.trim();
     final lastname = _lastnameController.text.trim();
     final email = _emailController.text.trim();
-    final collegeHandled = _collegeHandledController.text.trim();
     final password = _passwordController.text.trim();
 
-    // Ensure all fields are filled
+    // Ensure all fields are filled before proceeding
     if (firstname.isEmpty ||
         lastname.isEmpty ||
         email.isEmpty ||
-        collegeHandled.isEmpty ||
-        password.isEmpty) {
+        password.isEmpty ||
+        _selectedCollege == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('All fields are required.')),
+        const SnackBar(content: Text('All fields are required.')),
       );
       return;
     }
 
     try {
-      // Insert the new user into the database
-      final response =
-          await Supabase.instance.client.from('guidancecounselor').insert({
-        'firstname': firstname,
-        'lastname': lastname,
-        'email': email,
-        'college_handled': collegeHandled,
-        'password': password, // Note: Use hashed passwords in production
-      }).execute();
+      // Step 1: Create user in Supabase Auth
+      final AuthResponse authResponse =
+          await Supabase.instance.client.auth.signUp(
+        email: email,
+        password: password,
+      );
 
-      // Check the response status
-      if (response.status == 201) {
-        // Account creation successful
+      final user = authResponse.user;
+
+      if (user != null) {
+        // Step 2: Insert user profile into the 'user_guidance_profiles' table
+        final response = await Supabase.instance.client
+            .from('user_guidance_profiles')
+            .insert({
+          'user_id': user.id,
+          'firstname': firstname,
+          'lastname': lastname,
+          'college_handled': _selectedCollege,
+          'profile_image_url': null,
+        }).execute();
+
+        if (response.status != 201) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to create profile: ${response.status}'),
+            ),
+          );
+          return;
+        }
+
+        // Success
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Account created successfully!')),
+          const SnackBar(content: Text('Account created successfully!')),
         );
-        Navigator.pop(context); // Navigate back to the login page
+        Navigator.pop(context); // Navigate back to login screen
       } else {
-        // Handle errors using response.status
-        final errorMessage = response.data != null
-            ? 'Unknown error occurred'
-            : 'Failed to create account';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $errorMessage')),
+          const SnackBar(content: Text('Failed to create user.')),
         );
       }
     } catch (e) {
+      // Catch any unexpected exceptions
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Unexpected error: $e')),
+        SnackBar(content: Text('An error occurred: $e')),
       );
     }
   }
@@ -114,7 +140,7 @@ class _SignUpPageState extends State<SignUpPage> {
                       },
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 10),
                   // Lastname TextField
                   SizedBox(
                     width: 300,
@@ -129,7 +155,7 @@ class _SignUpPageState extends State<SignUpPage> {
                       },
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 10),
                   // Email TextField
                   SizedBox(
                     width: 300,
@@ -147,22 +173,7 @@ class _SignUpPageState extends State<SignUpPage> {
                       },
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  // College Handled TextField
-                  SizedBox(
-                    width: 300,
-                    child: _buildCustomTextField(
-                      controller: _collegeHandledController,
-                      labelText: 'College Handled',
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter the college handled';
-                        }
-                        return null;
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 10),
                   // Password TextField
                   SizedBox(
                     width: 300,
@@ -178,7 +189,7 @@ class _SignUpPageState extends State<SignUpPage> {
                       },
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 10),
                   // Confirm Password TextField
                   SizedBox(
                     width: 300,
@@ -194,7 +205,47 @@ class _SignUpPageState extends State<SignUpPage> {
                       },
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 10),
+                  // College Dropdown
+                  SizedBox(
+                    width: 300,
+                    child: DropdownButtonFormField<String>(
+                      value: _selectedCollege,
+                      items: _colleges.map((college) {
+                        return DropdownMenuItem<String>(
+                          value: college,
+                          child: Text(college),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedCollege = value;
+                        });
+                      },
+                      decoration: InputDecoration(
+                        labelText: 'College Handled',
+                        filled: true,
+                        fillColor: const Color(0xFFF2F7F5),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10.0),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF00848B),
+                            width: 1.5,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10.0),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF00848B),
+                            width: 2.0,
+                          ),
+                        ),
+                      ),
+                      validator: (value) =>
+                          value == null ? 'Please select a college' : null,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
                   // Sign Up Button
                   SizedBox(
                     width: 300,
@@ -213,11 +264,14 @@ class _SignUpPageState extends State<SignUpPage> {
                       ),
                       child: const Text(
                         'Sign Up',
-                        style: TextStyle(fontSize: 18),
+                        style: TextStyle(
+                            color: Color.fromARGB(
+                                255, 255, 255, 255), // White color
+                            fontSize: 18),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 10),
                   // Log In section
                   Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -228,7 +282,8 @@ class _SignUpPageState extends State<SignUpPage> {
                         width: 300,
                         child: ElevatedButton(
                           onPressed: () {
-                            Navigator.pop(context); // Navigate back to login
+                            // Navigate back to login page
+                            Navigator.pop(context);
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFCBE2BB),
@@ -255,7 +310,7 @@ class _SignUpPageState extends State<SignUpPage> {
     );
   }
 
-  // Custom TextField Builder
+  // Custom TextField Builder with validation and controller support
   Widget _buildCustomTextField({
     required TextEditingController controller,
     required String labelText,

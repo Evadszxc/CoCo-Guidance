@@ -8,11 +8,13 @@ import 'messages.dart';
 import 'notification.dart';
 import 'consultation.dart';
 import 'summaryreports.dart';
+import 'login.dart';
+import 'upload.dart';
 
 class Home extends StatefulWidget {
-  final String email;
+  final String userId;
 
-  Home({required this.email});
+  Home({required this.userId});
 
   @override
   _HomeState createState() => _HomeState();
@@ -25,41 +27,69 @@ class _HomeState extends State<Home> {
   DateTime selectedDate = DateTime.now();
   List<FlSpot> emotionDataPoints = [];
   List<FlSpot> sudsDataPoints = [];
-  bool isEmotionGraph = true; // Toggle between Emotion and SUDS graphs
+  bool isEmotionGraph = true;
+  bool isLoading = true;
   Map<String, dynamic>? profileData;
+  String? userEmail;
 
   final Map<String, double> emotionMap = {
-    'very_happy': 5,
+    'very happy': 5,
     'happy': 4,
-    'neutral': 3,
+    'meh': 3,
     'worried': 2,
     'sad': 1,
     'mad': 0,
   };
 
+  final Map<double, String> emotionLabels = {
+    0: "😡",
+    1: "😢",
+    2: "😨",
+    3: "😐",
+    4: "🙂",
+    5: "😀",
+  };
+
   @override
   void initState() {
     super.initState();
-    fetchEmotionData();
-    fetchSudsData();
-    fetchProfileData();
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    try {
+      setState(() {
+        isLoading = true;
+      });
+      await Future.wait([
+        fetchEmotionData(),
+        fetchSudsData(),
+        fetchProfileData(),
+        _fetchUserEmail(),
+      ]);
+    } catch (e) {
+      print("Error initializing data: $e");
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
+    }
   }
 
   Future<void> fetchProfileData() async {
     final response = await supabase
-        .from('guidancecounselor')
-        .select()
-        .eq('email', widget.email)
+        .from('user_guidance_profiles')
+        .select('firstname, lastname, profile_image_url, college_handled')
+        .eq('user_id', widget.userId)
         .single()
         .execute();
 
-    if (response.status == 200) {
+    if (response.status == 200 && response.data != null) {
       setState(() {
         profileData = response.data;
       });
     } else {
-      print(
-          "Error fetching profile data: ${response.status}, ${response.data}");
+      print("Error fetching profile data. Status: ${response.status}");
     }
   }
 
@@ -69,25 +99,41 @@ class _HomeState extends State<Home> {
 
     final response = await supabase
         .from('emotionresponse')
-        .select()
-        .gte('timestamp', startOfMonth.toIso8601String())
-        .lte('timestamp', endOfMonth.toIso8601String())
-        .order('timestamp', ascending: true)
+        .select('created_at, emotions') // Fetch all emotions
+        .gte('created_at', startOfMonth.toIso8601String())
+        .lte('created_at', endOfMonth.toIso8601String())
+        .order('created_at', ascending: true)
         .execute();
 
     if (response.status == 200 && response.data != null) {
       final data = response.data;
+
       Map<int, String> dailyDominantEmotion = {};
+      Map<int, Map<String, int>> dailyEmotionCounts = {};
 
       for (var entry in data) {
-        final timestamp = DateTime.parse(entry['timestamp']);
+        final timestamp = DateTime.parse(entry['created_at']);
         final dayOfMonth = timestamp.day;
-        final emotion = entry['emotion'] as String;
+        final emotion = entry['emotions'] as String;
 
-        if (!dailyDominantEmotion.containsKey(dayOfMonth)) {
-          dailyDominantEmotion[dayOfMonth] = emotion;
-        }
+        dailyEmotionCounts.putIfAbsent(dayOfMonth, () => {});
+        dailyEmotionCounts[dayOfMonth]![emotion] =
+            (dailyEmotionCounts[dayOfMonth]![emotion] ?? 0) + 1;
       }
+
+      dailyEmotionCounts.forEach((day, emotions) {
+        String dominantEmotion = '';
+        int maxCount = 0;
+
+        emotions.forEach((emotion, count) {
+          if (count > maxCount) {
+            maxCount = count;
+            dominantEmotion = emotion;
+          }
+        });
+
+        dailyDominantEmotion[day] = dominantEmotion;
+      });
 
       setState(() {
         emotionDataPoints = dailyDominantEmotion.entries.map<FlSpot>((entry) {
@@ -97,8 +143,7 @@ class _HomeState extends State<Home> {
         }).toList();
       });
     } else {
-      print(
-          "Error fetching emotion data: ${response.status}, ${response.data}");
+      print("Error fetching emotion data. Status: ${response.status}");
     }
   }
 
@@ -108,7 +153,7 @@ class _HomeState extends State<Home> {
 
     final response = await supabase
         .from('stress')
-        .select()
+        .select('timestamp, stress_scale') // Fetch stress data for all students
         .gte('timestamp', startOfMonth.toIso8601String())
         .lte('timestamp', endOfMonth.toIso8601String())
         .order('timestamp', ascending: true)
@@ -117,16 +162,37 @@ class _HomeState extends State<Home> {
     if (response.status == 200 && response.data != null) {
       final data = response.data;
 
+      Map<int, int> dailyDominantStress = {};
+      for (var entry in data) {
+        final timestamp = DateTime.parse(entry['timestamp']);
+        final dayOfMonth = timestamp.day;
+        final stressScale = entry['stress_scale'] as int;
+
+        dailyDominantStress[dayOfMonth] = stressScale;
+      }
+
       setState(() {
-        sudsDataPoints = data.map<FlSpot>((entry) {
-          final timestamp = DateTime.parse(entry['timestamp']);
-          final dayOfMonth = timestamp.day.toDouble();
-          final stressScale = entry['stress_scale'].toDouble();
-          return FlSpot(dayOfMonth, stressScale);
+        sudsDataPoints = dailyDominantStress.entries.map<FlSpot>((entry) {
+          final day = entry.key.toDouble();
+          final stressValue = entry.value.toDouble();
+          return FlSpot(day, stressValue);
         }).toList();
       });
     } else {
-      print("Error fetching SUDS data: ${response.status}, ${response.data}");
+      print("Error fetching SUDS data. Status: ${response.status}");
+    }
+  }
+
+  Future<void> _fetchUserEmail() async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user != null) {
+        setState(() {
+          userEmail = user.email;
+        });
+      }
+    } catch (e) {
+      print("Error fetching user email: $e");
     }
   }
 
@@ -159,6 +225,58 @@ class _HomeState extends State<Home> {
     );
   }
 
+  Widget buildBarGraph({
+    required List<FlSpot> dataPoints,
+    required bool isEmotionGraph,
+    required double maxY,
+  }) {
+    return BarChart(
+      BarChartData(
+        maxY: maxY,
+        barGroups: dataPoints.map((spot) {
+          return BarChartGroupData(
+            x: spot.x.toInt(),
+            barRods: [
+              BarChartRodData(
+                toY: spot.y,
+                width: 8,
+                color: Colors.blue,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ],
+          );
+        }).toList(),
+        titlesData: FlTitlesData(
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (value, _) {
+                if (isEmotionGraph) {
+                  return Text(emotionLabels[value.toDouble()] ?? "");
+                } else {
+                  return Text(value.toInt().toString());
+                }
+              },
+              interval: isEmotionGraph ? 1 : 10,
+              reservedSize: 40,
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: 1,
+              getTitlesWidget: (value, _) {
+                return Text(value.toInt().toString());
+              },
+            ),
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        gridData: FlGridData(show: false),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     String formattedDate = DateFormat("MMMM yyyy").format(selectedDate);
@@ -171,7 +289,9 @@ class _HomeState extends State<Home> {
           padding: EdgeInsets.zero,
           children: [
             DrawerHeader(
-              decoration: BoxDecoration(color: Color(0xFF00848B)),
+              decoration: BoxDecoration(
+                color: Color(0xFF00848B),
+              ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -183,7 +303,7 @@ class _HomeState extends State<Home> {
                   ),
                   SizedBox(height: 5),
                   Text(
-                    profileData?['firstname'] ?? 'Admin',
+                    '${profileData?['firstname'] ?? 'Admin'} ${profileData?['lastname'] ?? ''}',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 18,
@@ -191,7 +311,7 @@ class _HomeState extends State<Home> {
                     ),
                   ),
                   Text(
-                    profileData?['email'] ?? '',
+                    userEmail ?? 'Email Not Available',
                     style: TextStyle(color: Colors.white, fontSize: 14),
                   ),
                 ],
@@ -204,7 +324,9 @@ class _HomeState extends State<Home> {
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
-                      builder: (context) => Home(email: widget.email)),
+                    builder: (context) =>
+                        Home(userId: supabase.auth.currentUser?.id ?? ''),
+                  ),
                 );
               },
             ),
@@ -215,7 +337,8 @@ class _HomeState extends State<Home> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                      builder: (context) => Studentlist(email: widget.email)),
+                    builder: (context) => Studentlist(userId: widget.userId),
+                  ),
                 );
               },
             ),
@@ -226,8 +349,9 @@ class _HomeState extends State<Home> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                      builder: (context) =>
-                          GuidanceProfile(email: widget.email)),
+                    builder: (context) =>
+                        GuidanceProfile(userId: widget.userId),
+                  ),
                 );
               },
             ),
@@ -238,7 +362,8 @@ class _HomeState extends State<Home> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                      builder: (context) => Messages(email: widget.email)),
+                    builder: (context) => Messages(userId: widget.userId),
+                  ),
                 );
               },
             ),
@@ -249,8 +374,9 @@ class _HomeState extends State<Home> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                      builder: (context) =>
-                          NotificationPage(email: widget.email)),
+                    builder: (context) =>
+                        NotificationPage(userId: widget.userId),
+                  ),
                 );
               },
             ),
@@ -261,7 +387,8 @@ class _HomeState extends State<Home> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                      builder: (context) => Consultation(email: widget.email)),
+                    builder: (context) => Consultation(userId: widget.userId),
+                  ),
                 );
               },
             ),
@@ -272,16 +399,33 @@ class _HomeState extends State<Home> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                      builder: (context) =>
-                          Summaryreports(email: widget.email)),
+                    builder: (context) => Summaryreports(userId: widget.userId),
+                  ),
+                );
+              },
+            ),
+            _buildDrawerItem(
+              icon: Icons.upload,
+              title: 'Upload',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => Upload(userId: widget.userId),
+                  ),
                 );
               },
             ),
             ListTile(
               leading: Icon(Icons.logout, color: Colors.red),
               title: Text('Sign Out', style: TextStyle(color: Colors.red)),
-              onTap: () {
-                // Add sign-out logic here
+              onTap: () async {
+                await supabase.auth.signOut();
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (context) => LoginPage()),
+                  (route) => false,
+                );
               },
             ),
           ],
@@ -292,13 +436,40 @@ class _HomeState extends State<Home> {
         child: Column(
           children: [
             Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 IconButton(
                   icon: Image.asset('assets/menu.png', width: 30, height: 30),
                   onPressed: () => _scaffoldKey.currentState!.openDrawer(),
                 ),
-                SizedBox(width: 1),
-                Image.asset('assets/coco1.png', width: 200, height: 70),
+                SizedBox(width: 10),
+                Image.asset(
+                  'assets/coco1.png',
+                  width: 150,
+                  height: 50,
+                ),
+              ],
+            ),
+            SizedBox(
+              height: 30,
+            ),
+            Stack(
+              children: [
+                Align(
+                  alignment: Alignment.topLeft,
+                  child: Padding(
+                    padding: EdgeInsets.only(top: 0, left: 120),
+                    child: Text(
+                      "Home",
+                      style: TextStyle(
+                        fontSize: 24,
+                        color: Color(0xFF00848B),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
             SizedBox(height: 20),
@@ -327,11 +498,12 @@ class _HomeState extends State<Home> {
                     backgroundColor:
                         isEmotionGraph ? Color(0xFF00A19D) : Colors.grey[200],
                   ),
-                  child: Text("Emotion",
-                      style: TextStyle(
-                          color: isEmotionGraph
-                              ? Colors.white
-                              : Color(0xFF00A19D))),
+                  child: Text(
+                    "Emotion",
+                    style: TextStyle(
+                      color: isEmotionGraph ? Colors.white : Color(0xFF00A19D),
+                    ),
+                  ),
                 ),
                 SizedBox(width: 10),
                 ElevatedButton(
@@ -344,11 +516,12 @@ class _HomeState extends State<Home> {
                     backgroundColor:
                         !isEmotionGraph ? Color(0xFF00A19D) : Colors.grey[200],
                   ),
-                  child: Text("SUDS",
-                      style: TextStyle(
-                          color: !isEmotionGraph
-                              ? Colors.white
-                              : Color(0xFF00A19D))),
+                  child: Text(
+                    "SUDS",
+                    style: TextStyle(
+                      color: !isEmotionGraph ? Colors.white : Color(0xFF00A19D),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -364,64 +537,11 @@ class _HomeState extends State<Home> {
                   ),
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
-                    child: LineChart(
-                      LineChartData(
-                        minX: 1,
-                        maxX: DateTime(
-                                selectedDate.year, selectedDate.month + 1, 0)
-                            .day
-                            .toDouble(),
-                        minY: isEmotionGraph ? 0 : 0,
-                        maxY: isEmotionGraph ? 5 : 100,
-                        titlesData: FlTitlesData(
-                          leftTitles: AxisTitles(
-                            sideTitles: SideTitles(
-                              showTitles: true,
-                              getTitlesWidget: (value, _) {
-                                if (isEmotionGraph) {
-                                  switch (value.toInt()) {
-                                    case 0:
-                                      return Text("😡");
-                                    case 1:
-                                      return Text("😢");
-                                    case 2:
-                                      return Text("😟");
-                                    case 3:
-                                      return Text("😐");
-                                    case 4:
-                                      return Text("🙂");
-                                    case 5:
-                                      return Text("😀");
-                                    default:
-                                      return Text("");
-                                  }
-                                } else {
-                                  return Text(value.toInt().toString());
-                                }
-                              },
-                              interval: isEmotionGraph ? 1 : 10,
-                              reservedSize: 30,
-                            ),
-                          ),
-                          bottomTitles: AxisTitles(
-                            sideTitles: SideTitles(
-                              showTitles: true,
-                              interval: 5,
-                            ),
-                          ),
-                        ),
-                        lineBarsData: [
-                          LineChartBarData(
-                            spots: isEmotionGraph
-                                ? emotionDataPoints
-                                : sudsDataPoints,
-                            isCurved: false,
-                            barWidth: 2,
-                            color: Colors.black,
-                            dotData: FlDotData(show: true),
-                          ),
-                        ],
-                      ),
+                    child: buildBarGraph(
+                      dataPoints:
+                          isEmotionGraph ? emotionDataPoints : sudsDataPoints,
+                      isEmotionGraph: isEmotionGraph,
+                      maxY: isEmotionGraph ? 5 : 100,
                     ),
                   ),
                 ),
@@ -436,7 +556,7 @@ class _HomeState extends State<Home> {
 
 void main() {
   runApp(MaterialApp(
-    home: Home(email: 'Guidance@uic.edu.ph'),
+    home: Home(userId: 'user-id-placeholder'),
     debugShowCheckedModeBanner: false,
   ));
 }

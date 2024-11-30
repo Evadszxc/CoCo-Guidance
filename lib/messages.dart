@@ -7,19 +7,39 @@ import 'summaryreports.dart';
 import 'home.dart';
 
 class Messages extends StatefulWidget {
-  final String email; // Accept the logged-in user's email
+  final String userId; // Accept the logged-in user's ID
 
-  Messages({required this.email}); // Constructor to accept email
+  Messages({required this.userId}); // Constructor to accept userId
 
   @override
   _MessagesState createState() => _MessagesState();
 }
 
 class _MessagesState extends State<Messages> {
-  Widget _buildDrawerItem(
-      {required IconData icon,
-      required String title,
-      required VoidCallback onTap}) {
+  final TextEditingController _messageController = TextEditingController();
+  List<Map<String, String>> chatMessages = [
+    {"sender": "Adrian Mark Cinchez", "message": "Hi", "isMe": "false"},
+    {"sender": "You", "message": "Hello", "isMe": "true"},
+  ];
+
+  void _sendMessage() {
+    if (_messageController.text.trim().isNotEmpty) {
+      setState(() {
+        chatMessages.add({
+          "sender": "You",
+          "message": _messageController.text.trim(),
+          "isMe": "true",
+        });
+      });
+      _messageController.clear();
+    }
+  }
+
+  Widget _buildDrawerItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
     return ListTile(
       leading: Icon(
         icon,
@@ -35,7 +55,6 @@ class _MessagesState extends State<Messages> {
     );
   }
 
-  // Helper function for message bubble
   Widget _buildChatBubble({
     required String sender,
     required String message,
@@ -70,7 +89,6 @@ class _MessagesState extends State<Messages> {
     );
   }
 
-  // List of students
   Widget _buildStudentItem(String name, String year, String stressScale) {
     return Container(
       padding: EdgeInsets.symmetric(vertical: 10, horizontal: 10),
@@ -123,11 +141,9 @@ class _MessagesState extends State<Messages> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Image.asset(
-                    'assets/profile.png',
-                    width: 80,
-                    height: 60,
-                    fit: BoxFit.contain,
+                  CircleAvatar(
+                    radius: 40,
+                    backgroundImage: AssetImage('assets/profile.png'),
                   ),
                   SizedBox(height: 10),
                   Text(
@@ -153,11 +169,10 @@ class _MessagesState extends State<Messages> {
               icon: Icons.home,
               title: 'Home',
               onTap: () {
-                Navigator.push(
+                Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        Home(email: widget.email), // Navigate to Home
+                    builder: (context) => Home(userId: widget.userId),
                   ),
                 );
               },
@@ -166,10 +181,10 @@ class _MessagesState extends State<Messages> {
               icon: Icons.list,
               title: 'Student List',
               onTap: () {
-                Navigator.push(
+                Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => Studentlist(email: widget.email),
+                    builder: (context) => Studentlist(userId: widget.userId),
                   ),
                 );
               },
@@ -181,7 +196,8 @@ class _MessagesState extends State<Messages> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => GuidanceProfile(email: widget.email),
+                    builder: (context) =>
+                        GuidanceProfile(userId: widget.userId),
                   ),
                 );
               },
@@ -189,59 +205,24 @@ class _MessagesState extends State<Messages> {
             _buildDrawerItem(
               icon: Icons.message,
               title: 'Messages',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => Messages(email: widget.email),
-                  ),
-                );
-              },
+              onTap: () => Navigator.pop(context),
             ),
             _buildDrawerItem(
               icon: Icons.notifications,
               title: 'Notification',
               onTap: () {
-                Navigator.push(
+                Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => NotificationPage(
-                        email: widget.email), // Pass the email here
-                  ),
-                );
-              },
-            ),
-            _buildDrawerItem(
-              icon: Icons.local_hospital,
-              title: 'Consultation',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => Consultation(
-                        email: widget.email), // Pass the email here
-                  ),
-                );
-              },
-            ),
-            _buildDrawerItem(
-              icon: Icons.summarize,
-              title: 'Summary Reports',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => Summaryreports(email: widget.email),
+                    builder: (context) =>
+                        NotificationPage(userId: widget.userId),
                   ),
                 );
               },
             ),
             ListTile(
               leading: Icon(Icons.logout, color: Colors.red),
-              title: Text(
-                'Sign Out',
-                style: TextStyle(color: Colors.red),
-              ),
+              title: Text('Sign Out', style: TextStyle(color: Colors.red)),
               onTap: () {
                 // Add sign-out logic here
               },
@@ -253,143 +234,120 @@ class _MessagesState extends State<Messages> {
         padding: EdgeInsets.all(16.0),
         child: Column(
           children: [
-            Builder(
-              builder: (BuildContext context) {
-                return Row(
-                  children: [
-                    IconButton(
-                      icon: Image.asset(
-                        'assets/menu.png',
-                        width: 30,
-                        height: 30,
-                        fit: BoxFit.contain,
-                      ),
-                      onPressed: () {
-                        Scaffold.of(context).openDrawer();
-                      },
-                    ),
-                    SizedBox(width: 1),
-                    Image.asset(
-                      'assets/coco1.png',
-                      width: 200,
-                      height: 70,
-                      fit: BoxFit.contain,
-                    ),
-                  ],
-                );
-              },
+            Row(
+              children: [
+                IconButton(
+                  icon: Image.asset('assets/menu.png', width: 30, height: 30),
+                  onPressed: () => Scaffold.of(context).openDrawer(),
+                ),
+                SizedBox(width: 1),
+                Image.asset('assets/coco1.png', width: 200, height: 70),
+              ],
             ),
             Expanded(
               child: SingleChildScrollView(
                 child: Center(
                   child: Container(
                     width: 800,
+                    padding: EdgeInsets.all(16.0),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(12.0),
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(25.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'MESSAGES',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF00B2B0),
-                            ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'MESSAGES',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF00B2B0),
                           ),
-                          SizedBox(height: 20),
-
-                          // Left Section - List of Students
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                flex: 2,
+                        ),
+                        SizedBox(height: 20),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 2,
+                              child: Column(
+                                children: [
+                                  _buildStudentItem(
+                                    'Adrian Mark Cinchez',
+                                    'BSIT - 3RD YEAR',
+                                    '90',
+                                  ),
+                                  _buildStudentItem(
+                                    'Jenny Babe Cano',
+                                    'BSIT - 3RD YEAR',
+                                    '60',
+                                  ),
+                                  _buildStudentItem(
+                                    'Dave D. Laburada',
+                                    'BSP - 4TH YEAR',
+                                    '90',
+                                  ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(width: 20),
+                            Expanded(
+                              flex: 3,
+                              child: Container(
+                                height: 400,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[200],
+                                  borderRadius: BorderRadius.circular(12.0),
+                                ),
                                 child: Column(
                                   children: [
-                                    _buildStudentItem(
-                                      'Adrian Mark Cinchez',
-                                      'BSIT - 3RD YEAR',
-                                      '90',
+                                    Expanded(
+                                      child: ListView(
+                                        children: chatMessages.map((chat) {
+                                          return _buildChatBubble(
+                                            sender: chat['sender'] ?? 'Unknown',
+                                            message: chat['message'] ?? '',
+                                            isMe: chat['isMe'] == "true"
+                                                ? true
+                                                : false,
+                                          );
+                                        }).toList(),
+                                      ),
                                     ),
-                                    _buildStudentItem(
-                                      'Jenny Babe Cano',
-                                      'BSIT - 3RD YEAR',
-                                      '60',
-                                    ),
-                                    _buildStudentItem(
-                                      'Dave D. Laburada',
-                                      'BSP - 4TH YEAR',
-                                      '90',
+                                    Padding(
+                                      padding: const EdgeInsets.all(8.0),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextField(
+                                              controller: _messageController,
+                                              decoration: InputDecoration(
+                                                hintText: "Type here...",
+                                                border: OutlineInputBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(30),
+                                                ),
+                                                filled: true,
+                                                fillColor: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                          IconButton(
+                                            icon: Icon(Icons.send,
+                                                color: Color(0xFF00B2B0)),
+                                            onPressed: _sendMessage,
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ],
                                 ),
                               ),
-                              SizedBox(width: 20),
-
-                              // Chat Section
-                              Expanded(
-                                flex: 3,
-                                child: Container(
-                                  height: 400,
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey[200],
-                                    borderRadius: BorderRadius.circular(12.0),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      _buildChatBubble(
-                                        sender: "Adrian Mark Cinchez",
-                                        message: "Hi",
-                                        isMe: false,
-                                      ),
-                                      _buildChatBubble(
-                                        sender: "You",
-                                        message: "Hello",
-                                        isMe: true,
-                                      ),
-                                      Spacer(),
-                                      Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Row(
-                                          children: [
-                                            Expanded(
-                                              child: TextField(
-                                                decoration: InputDecoration(
-                                                  hintText: "Type Here...",
-                                                  border: OutlineInputBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            30),
-                                                  ),
-                                                  filled: true,
-                                                  fillColor: Colors.white,
-                                                ),
-                                              ),
-                                            ),
-                                            IconButton(
-                                              icon: Icon(Icons.send,
-                                                  color: Color(0xFF00B2B0)),
-                                              onPressed: () {
-                                                // Logic to send message
-                                              },
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: 20),
-                        ],
-                      ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -404,6 +362,6 @@ class _MessagesState extends State<Messages> {
 
 void main() {
   runApp(MaterialApp(
-    home: Messages(email: 'Guidance@uic.edu.ph'), // Pass the email
+    home: Messages(userId: 'some_user_id'), // Pass the user ID here
   ));
 }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:guidance/home.dart'; // Navigate to Home page after login
-import 'signup.dart'; // Navigate to Sign-up page
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'home.dart'; // Import Home page
+import 'signup.dart'; // Import for sign-up page
 
 class LoginPage extends StatefulWidget {
   @override
@@ -15,24 +15,39 @@ class _LoginPageState extends State<LoginPage> {
 
   final SupabaseClient supabase = Supabase.instance.client;
 
-  // Function to verify credentials and sign in using Supabase
-  Future<bool> _verifyCredentials(String email, String password) async {
+  // Function to log in using Supabase Auth
+  Future<void> _loginWithSupabase(String email, String password) async {
     try {
-      final response = await supabase.auth.signInWithPassword(
+      final AuthResponse response = await supabase.auth.signInWithPassword(
         email: email,
         password: password,
       );
 
-      // Check if session and user exist
-      if (response.session != null && response.user != null) {
-        return true;
+      if (response.session != null) {
+        // Navigate to Home page with userId
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => Home(userId: response.user?.id ?? ''),
+          ),
+        );
       } else {
-        return false;
+        _showError('Invalid email or password. Please try again.');
       }
     } catch (error) {
-      print('Error during login: $error');
-      return false;
+      // Check if the error is due to unconfirmed email
+      if (error.toString().contains('Email not confirmed')) {
+        _showError('Please confirm your email address.');
+      } else {
+        _showError('Login failed. $error');
+      }
     }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   @override
@@ -67,6 +82,7 @@ class _LoginPageState extends State<LoginPage> {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // Email TextField
                             SizedBox(
                               width: 400,
                               child: TextFormField(
@@ -90,6 +106,7 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                             ),
                             SizedBox(height: 16.0),
+                            // Password TextField
                             SizedBox(
                               width: 400,
                               child: TextFormField(
@@ -109,41 +126,19 @@ class _LoginPageState extends State<LoginPage> {
                                 },
                               ),
                             ),
-                            SizedBox(height: 24.0),
+                            SizedBox(height: 26.0),
+                            // Log In Button
                             SizedBox(
+                              height: 38,
                               width: 400,
                               child: ElevatedButton(
                                 onPressed: () async {
                                   if (_formKey.currentState?.validate() ??
                                       false) {
-                                    bool isValid = await _verifyCredentials(
+                                    await _loginWithSupabase(
                                       _emailController.text,
                                       _passwordController.text,
                                     );
-
-                                    if (isValid) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                            content: Text('Login successful')),
-                                      );
-
-                                      Navigator.pushReplacement(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) => Home(
-                                            email: _emailController.text,
-                                          ),
-                                        ),
-                                      );
-                                    } else {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                            content:
-                                                Text('Invalid credentials')),
-                                      );
-                                    }
                                   }
                                 },
                                 style: ElevatedButton.styleFrom(
@@ -155,11 +150,14 @@ class _LoginPageState extends State<LoginPage> {
                                 ),
                               ),
                             ),
-                            SizedBox(height: 16.0),
+                            SizedBox(height: 18.0),
+                            // Sign Up Button
                             SizedBox(
+                              height: 38,
                               width: 400,
                               child: ElevatedButton(
                                 onPressed: () {
+                                  // Navigate to sign-up page
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
@@ -172,7 +170,9 @@ class _LoginPageState extends State<LoginPage> {
                                 ),
                                 child: Text(
                                   'Sign Up',
-                                  style: TextStyle(color: Colors.white),
+                                  style: TextStyle(
+                                      color:
+                                          const Color.fromARGB(255, 0, 0, 0)),
                                 ),
                               ),
                             ),

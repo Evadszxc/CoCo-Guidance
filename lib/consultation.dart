@@ -1,75 +1,163 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart'; // For formatting DateTime
-import 'package:supabase_flutter/supabase_flutter.dart'; // To connect with Supabase
+import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'studentlist.dart';
 import 'messages.dart';
 import 'notification.dart';
 import 'summaryreports.dart';
-import 'package:guidance/guidanceprofile/guidanceprofile.dart';
+import 'guidanceprofile/guidanceprofile.dart';
 import 'home.dart';
+import 'login.dart';
+import 'upload.dart';
 
 class Consultation extends StatefulWidget {
-  final String email; // Accept the logged-in user's email
+  final String userId;
 
-  Consultation({required this.email}); // Constructor to accept email
+  Consultation({required this.userId});
 
   @override
   _ConsultationState createState() => _ConsultationState();
 }
 
 class _ConsultationState extends State<Consultation> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final SupabaseClient supabase = Supabase.instance.client;
+  Map<String, dynamic>? profileData;
+  String? userEmail;
+  String? guidanceId;
   TimeOfDay? _selectedTime;
   DateTime? _selectedDate;
   List<Map<String, dynamic>> consultationRequests = [];
   List<Map<String, dynamic>> scheduledConsultations = [];
-  final SupabaseClient supabase = Supabase.instance.client;
-  Map<String, dynamic>? profileData;
 
   @override
   void initState() {
     super.initState();
-    fetchConsultationRequests();
-    fetchProfileData();
+
+    // Fetch the guidance ID first, then execute dependent fetches
+    _initialize();
   }
 
-  // Function to fetch consultation requests from the 'session' table
-  Future<void> fetchConsultationRequests() async {
-    final response = await supabase
-        .from('session')
-        .select('firstname, lastname, time, date')
-        .execute();
+  Future<void> _initialize() async {
+    // Fetch guidanceId first
+    await fetchGuidanceId();
 
-    if (response.status == 200 && response.data != null) {
-      setState(() {
-        consultationRequests = List<Map<String, dynamic>>.from(response.data);
-      });
-    } else {
-      print(
-          'Error fetching consultation requests: ${response.status}, ${response.data}');
+    // Now call the other dependent fetch methods
+    await fetchConsultationRequests();
+    await fetchScheduledConsultations();
+    await fetchProfileData();
+    await _fetchUserEmail();
+  }
+
+  Future<void> fetchGuidanceId() async {
+    try {
+      final response = await supabase
+          .from('user_guidance_profiles')
+          .select('guidance_id')
+          .eq('user_id', widget.userId)
+          .single()
+          .execute();
+
+      if (response.data != null) {
+        setState(() {
+          guidanceId = response.data['guidance_id'];
+        });
+        print('Fetched guidanceId: $guidanceId');
+      } else {
+        print('Error: guidanceId not found for user_id: ${widget.userId}');
+      }
+    } catch (e) {
+      print('Error fetching guidanceId: $e');
     }
   }
 
-  // Function to fetch profile data for the drawer avatar
   Future<void> fetchProfileData() async {
-    final response = await supabase
-        .from('guidancecounselor')
-        .select()
-        .eq('email', widget.email)
-        .single()
-        .execute();
+    try {
+      final response = await supabase
+          .from('user_guidance_profiles')
+          .select('firstname, lastname, profile_image_url')
+          .eq('user_id', widget.userId)
+          .single()
+          .execute();
 
-    if (response.status == 200 && response.data != null) {
-      setState(() {
-        profileData = response.data;
-      });
-    } else {
-      print(
-          "Error fetching profile data: ${response.status}, ${response.data}");
+      if (response.status == 200 && response.data != null) {
+        setState(() {
+          profileData = response.data;
+        });
+      }
+    } catch (e) {
+      print('Error fetching profile data: $e');
     }
   }
 
-  // Function to show the schedule dialog and set the schedule
-  void _showScheduleDialog(int index) {
+  Future<void> _fetchUserEmail() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        setState(() {
+          userEmail = user.email;
+        });
+      }
+    } catch (e) {
+      print("Error fetching user email: $e");
+    }
+  }
+
+  Future<void> fetchConsultationRequests() async {
+    if (guidanceId == null) {
+      print('guidanceId is null. Skipping fetchConsultationRequests.');
+      return;
+    }
+    try {
+      final response = await supabase
+          .from('consultation_request')
+          .select(
+              'id, description, student_id, student:student_id (firstname, lastname)')
+          .eq('guidance_id', guidanceId)
+          .eq('status', 'Pending')
+          .execute();
+
+      print('Consultation Requests Response: ${response.data}');
+      if (response.data != null) {
+        setState(() {
+          consultationRequests = List<Map<String, dynamic>>.from(response.data);
+        });
+      }
+    } catch (e) {
+      print('Error fetching consultation requests: $e');
+    }
+  }
+
+  Future<void> fetchScheduledConsultations() async {
+    try {
+      final response = await supabase
+          .from('session')
+          .select(
+              'id, schedule, sessiontype, location, consultation_status, student:student_id (firstname, lastname)')
+          .eq('guidance_id', guidanceId) // Use the fetched guidance_id
+          .execute();
+
+      if (response.data != null) {
+        setState(() {
+          scheduledConsultations =
+              List<Map<String, dynamic>>.from(response.data);
+        });
+      }
+      print('Scheduled Consultations Response: ${response.data}');
+    } catch (e) {
+      print('Error fetching scheduled consultations: $e');
+    }
+  }
+
+  void _showScheduleDialog(int index, {bool isReschedule = false}) {
+    setState(() {
+      _selectedTime = null;
+      _selectedDate = null;
+    });
+
+    String? selectedSessionType;
+    String? selectedLocation;
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -78,25 +166,68 @@ class _ConsultationState extends State<Consultation> {
             borderRadius: BorderRadius.circular(12.0),
           ),
           child: Container(
-            width: MediaQuery.of(context).size.width * 0.3,
+            width: MediaQuery.of(context).size.width * 0.6,
             padding: const EdgeInsets.all(16.0),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Set Schedule', style: TextStyle(fontSize: 20)),
+                Text(
+                  isReschedule ? 'Reschedule Consultation' : 'Set Schedule',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
                 SizedBox(height: 20),
                 _buildTimePicker(),
                 SizedBox(height: 10),
                 _buildDatePicker(),
+                SizedBox(height: 10),
+                _buildDropdown(
+                  label: 'Session Type',
+                  value: selectedSessionType,
+                  items: ['Video Call', 'Face-to-Face'],
+                  onChanged: (value) {
+                    setState(() {
+                      selectedSessionType = value;
+                    });
+                  },
+                ),
+                SizedBox(height: 10),
+                _buildDropdown(
+                  label: 'Location',
+                  value: selectedLocation,
+                  items: ['Online', 'Main', 'Annex'],
+                  onChanged: (value) {
+                    setState(() {
+                      selectedLocation = value;
+                    });
+                  },
+                ),
                 SizedBox(height: 20),
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Color(0xFF00848B),
-                  ),
                   onPressed: () async {
-                    await _saveSchedule(index);
+                    if (_selectedDate == null ||
+                        _selectedTime == null ||
+                        selectedSessionType == null ||
+                        selectedLocation == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Please fill in all fields.'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
+
+                    if (isReschedule) {
+                      // Update session details
+                      await _updateSchedule(
+                          index, selectedSessionType!, selectedLocation!);
+                    } else {
+                      // Create a new schedule
+                      await _saveSchedule(
+                          index, selectedSessionType!, selectedLocation!);
+                    }
+
                     Navigator.pop(context);
-                    fetchConsultationRequests(); // Refresh the list after saving
                   },
                   child: Text('SAVE'),
                 ),
@@ -108,20 +239,68 @@ class _ConsultationState extends State<Consultation> {
     );
   }
 
-  // Widget for Time Picker
+  Future<void> _updateSchedule(
+      int index, String sessionType, String location) async {
+    final DateTime schedule = DateTime(
+      _selectedDate!.year,
+      _selectedDate!.month,
+      _selectedDate!.day,
+      _selectedTime!.hour,
+      _selectedTime!.minute,
+    );
+
+    try {
+      await supabase
+          .from('session')
+          .update({
+            'schedule': schedule.toIso8601String(),
+            'sessiontype': sessionType,
+            'location': location,
+          })
+          .eq('id', scheduledConsultations[index]['id'])
+          .execute();
+
+      fetchScheduledConsultations();
+    } catch (e) {
+      print('Error updating schedule: $e');
+    }
+  }
+
+  Widget _buildDropdown({
+    required String label,
+    required String? value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text('$label:', style: TextStyle(fontSize: 16)),
+        DropdownButton<String>(
+          value: value,
+          items: items.map((item) {
+            return DropdownMenuItem<String>(
+              value: item,
+              child: Text(item),
+            );
+          }).toList(),
+          onChanged: onChanged,
+          hint: Text('Select $label'),
+        ),
+      ],
+    );
+  }
+
   Widget _buildTimePicker() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text('Time:'),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Color(0xFFCBE2BB),
-          ),
-          onPressed: () async {
+        Text('Time:', style: TextStyle(fontSize: 16)),
+        InkWell(
+          onTap: () async {
             TimeOfDay? pickedTime = await showTimePicker(
               context: context,
-              initialTime: TimeOfDay.now(),
+              initialTime: _selectedTime ?? TimeOfDay.now(),
             );
             if (pickedTime != null) {
               setState(() {
@@ -129,31 +308,29 @@ class _ConsultationState extends State<Consultation> {
               });
             }
           },
-          child: Text(
-            _selectedTime != null
-                ? _selectedTime!.format(context)
-                : 'Select Time',
-            style: TextStyle(color: Colors.black),
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(_selectedTime?.format(context) ?? 'Select Time'),
           ),
         ),
       ],
     );
   }
 
-  // Widget for Date Picker
   Widget _buildDatePicker() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text('Date:'),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Color(0xFFCBE2BB),
-          ),
-          onPressed: () async {
+        Text('Date:', style: TextStyle(fontSize: 16)),
+        InkWell(
+          onTap: () async {
             DateTime? pickedDate = await showDatePicker(
               context: context,
-              initialDate: DateTime.now(),
+              initialDate: _selectedDate ?? DateTime.now(),
               firstDate: DateTime(2000),
               lastDate: DateTime(2100),
             );
@@ -163,385 +340,373 @@ class _ConsultationState extends State<Consultation> {
               });
             }
           },
-          child: Text(
-            _selectedDate != null
-                ? DateFormat('yyyy-MM-dd').format(_selectedDate!)
-                : 'Select Date',
-            style: TextStyle(color: Colors.black),
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(_selectedDate != null
+                ? DateFormat.yMMMd().format(_selectedDate!)
+                : 'Select Date'),
           ),
         ),
       ],
     );
   }
 
-  // Function to save the selected schedule into the 'session' table
-  Future<void> _saveSchedule(int index) async {
-    if (_selectedDate != null && _selectedTime != null) {
-      final formattedTime = '${_selectedTime!.hour}:${_selectedTime!.minute}';
-      final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDate!);
+  Future<void> _saveSchedule(
+      int index, String sessionType, String location) async {
+    final DateTime schedule = DateTime(
+      _selectedDate!.year,
+      _selectedDate!.month,
+      _selectedDate!.day,
+      _selectedTime!.hour,
+      _selectedTime!.minute,
+    );
 
-      final response = await supabase
-          .from('session')
-          .update({
-            'time': formattedTime,
-            'date': formattedDate,
-          })
-          .eq('firstname', consultationRequests[index]['firstname'])
-          .eq('lastname', consultationRequests[index]['lastname'])
+    try {
+      // Extracting the student_id from consultationRequests
+      final studentId = consultationRequests[index]['student_id'];
+      if (studentId == null) {
+        print('Error: student_id is null.');
+        return;
+      }
+      print('Student ID to insert: $studentId'); // Debugging
+
+      // Insert into session table
+      await supabase.from('session').insert({
+        'student_id': studentId,
+        'guidance_id': guidanceId,
+        'schedule': schedule.toIso8601String(),
+        'sessiontype': sessionType,
+        'location': location,
+        'consultation_status': 'Pending',
+      });
+
+      // Update consultation_request table
+      await supabase
+          .from('consultation_request')
+          .update({'status': 'Approved'})
+          .eq('id', consultationRequests[index]['id'])
           .execute();
 
-      if (response.status == 200) {
-        setState(() {
-          scheduledConsultations.add({
-            'firstname': consultationRequests[index]['firstname'],
-            'lastname': consultationRequests[index]['lastname'],
-            'time': formattedTime,
-            'date': formattedDate,
-          });
-        });
-      } else {
-        print('Error saving schedule: ${response.status}, ${response.data}');
-      }
+      fetchConsultationRequests();
+      fetchScheduledConsultations();
+    } catch (e) {
+      print('Error saving schedule: $e');
     }
   }
 
-  Widget _buildDrawerItem(
-      {required IconData icon,
-      required String title,
-      required VoidCallback onTap}) {
+  Widget _buildDrawerItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
     return ListTile(
-      leading: Icon(
-        icon,
-        color: Color(0xFF00848B),
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: Color(0xFF00848B),
-        ),
-      ),
+      leading: Icon(icon, color: Color(0xFF00848B)),
+      title: Text(title, style: TextStyle(color: Color(0xFF00848B))),
       onTap: onTap,
+    );
+  }
+
+  Widget _buildDrawer() {
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(color: Color(0xFF00848B)),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircleAvatar(
+                  radius: 40,
+                  backgroundImage: profileData?['profile_image_url'] != null
+                      ? NetworkImage(profileData!['profile_image_url'])
+                      : AssetImage('assets/profile.png') as ImageProvider,
+                ),
+                SizedBox(height: 5),
+                Text(
+                  '${profileData?['firstname'] ?? 'Admin'} ${profileData?['lastname'] ?? ''}',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  userEmail ?? 'Email Not Available',
+                  style: TextStyle(color: Colors.white, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+          _buildDrawerItem(
+            icon: Icons.home,
+            title: 'Home',
+            onTap: () => Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => Home(userId: widget.userId)),
+            ),
+          ),
+          _buildDrawerItem(
+            icon: Icons.list,
+            title: 'Student List',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => Studentlist(userId: widget.userId)),
+            ),
+          ),
+          _buildDrawerItem(
+            icon: Icons.person,
+            title: 'Profile',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => GuidanceProfile(userId: widget.userId)),
+            ),
+          ),
+          _buildDrawerItem(
+            icon: Icons.message,
+            title: 'Messages',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => Messages(userId: widget.userId)),
+            ),
+          ),
+          _buildDrawerItem(
+            icon: Icons.notifications,
+            title: 'Notification',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) =>
+                      NotificationPage(userId: widget.userId)),
+            ),
+          ),
+          _buildDrawerItem(
+            icon: Icons.local_hospital,
+            title: 'Consultation',
+            onTap: () => Navigator.pop(context),
+          ),
+          _buildDrawerItem(
+            icon: Icons.summarize,
+            title: 'Summary Reports',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => Summaryreports(userId: widget.userId)),
+            ),
+          ),
+          _buildDrawerItem(
+            icon: Icons.upload,
+            title: 'Upload',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => Upload(userId: widget.userId),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.logout, color: Colors.red),
+            title: Text('Sign Out', style: TextStyle(color: Colors.red)),
+            onTap: () async {
+              await supabase.auth.signOut();
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => LoginPage()),
+                (route) => false,
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    print('Scheduled Consultations in UI: $scheduledConsultations');
+
     return Scaffold(
-      backgroundColor: Colors.white,
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              decoration: BoxDecoration(
-                color: Color(0xFF00848B),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircleAvatar(
-                    backgroundImage: profileData?['profile_image_url'] != null
-                        ? NetworkImage(profileData!['profile_image_url'])
-                        : AssetImage('assets/profile.png') as ImageProvider,
-                    radius: 40,
-                  ),
-                  SizedBox(height: 3),
-                  Text(
-                    profileData?['firstname'] ?? 'Admin',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  SizedBox(height: 5),
-                  Text(
-                    profileData?['email'] ?? 'Admin@uic.edu.ph',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            _buildDrawerItem(
-              icon: Icons.home,
-              title: 'Home',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => Home(email: widget.email),
-                  ),
-                );
-              },
-            ),
-            _buildDrawerItem(
-              icon: Icons.list,
-              title: 'Student List',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => Studentlist(email: widget.email),
-                  ),
-                );
-              },
-            ),
-            _buildDrawerItem(
-              icon: Icons.person,
-              title: 'Profile',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => GuidanceProfile(email: widget.email),
-                  ),
-                );
-              },
-            ),
-            _buildDrawerItem(
-              icon: Icons.message,
-              title: 'Messages',
-              onTap: () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                    builder: (context) => Messages(email: widget.email)),
-              ),
-            ),
-            _buildDrawerItem(
-              icon: Icons.notifications,
-              title: 'Notification',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => NotificationPage(email: widget.email),
-                  ),
-                );
-              },
-            ),
-            _buildDrawerItem(
-              icon: Icons.local_hospital,
-              title: 'Consultation',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => Consultation(email: widget.email),
-                  ),
-                );
-              },
-            ),
-            _buildDrawerItem(
-              icon: Icons.summarize,
-              title: 'Summary Reports',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => Summaryreports(email: widget.email),
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.logout, color: Colors.red),
-              title: Text(
-                'Sign Out',
-                style: TextStyle(color: Colors.red),
-              ),
-              onTap: () {
-                // Add sign-out logic here
-              },
-            ),
-          ],
-        ),
-      ),
+      key: _scaffoldKey,
+      backgroundColor: Color(0xFFF3F8F8),
+      drawer: _buildDrawer(),
       body: Padding(
         padding: EdgeInsets.all(16.0),
         child: Column(
           children: [
-            Builder(
-              builder: (BuildContext context) {
-                return Row(
-                  children: [
-                    IconButton(
-                      icon: Image.asset(
-                        'assets/menu.png',
-                        width: 30,
-                        height: 30,
-                        fit: BoxFit.contain,
-                      ),
-                      onPressed: () {
-                        Scaffold.of(context).openDrawer();
-                      },
-                    ),
-                    SizedBox(width: 1),
-                    Image.asset(
-                      'assets/coco1.png',
-                      width: 200,
-                      height: 70,
-                      fit: BoxFit.contain,
-                    ),
-                  ],
-                );
-              },
+            Row(
+              children: [
+                IconButton(
+                  icon: Image.asset('assets/menu.png', width: 30, height: 30),
+                  onPressed: () => _scaffoldKey.currentState!.openDrawer(),
+                ),
+                SizedBox(width: 1),
+                Image.asset('assets/coco1.png', width: 200, height: 70),
+              ],
             ),
-            SizedBox(height: 20),
-            // UI for consultation requests and scheduled consultations
             Expanded(
               child: Row(
                 children: [
-                  // Consultation Request Card (Left)
+                  // Consultation Requests Section
+// Consultation Requests Section
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Color(0xFFF3F8F8),
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(12.0),
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Consultation Request',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF00B2B0),
-                              ),
+                      padding: EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Consultation Requests',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF00848B),
                             ),
-                            SizedBox(height: 10),
-                            Table(
-                              columnWidths: const {
-                                0: FlexColumnWidth(2),
-                                1: FlexColumnWidth(2),
-                              },
-                              children: [
-                                TableRow(
-                                  children: [
-                                    Padding(
-                                      padding: const EdgeInsets.all(8.0),
-                                      child: Text('Name'),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.all(8.0),
-                                      child: Text('Action'),
-                                    ),
-                                  ],
-                                ),
-                                ...consultationRequests.map((request) {
-                                  final index =
-                                      consultationRequests.indexOf(request);
-                                  return TableRow(
-                                    children: [
-                                      Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Text(
-                                            '${request['firstname']} ${request['lastname']}'),
-                                      ),
-                                      Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: ElevatedButton(
-                                          onPressed: () =>
-                                              _showScheduleDialog(index),
-                                          child: Text('Set Schedule'),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Color(0xFF00B2B0),
-                                            foregroundColor: Colors.white,
+                          ),
+                          SizedBox(height: 10),
+                          Expanded(
+                            child: consultationRequests.isNotEmpty
+                                ? ListView.builder(
+                                    itemCount: consultationRequests.length,
+                                    itemBuilder: (context, index) {
+                                      final request =
+                                          consultationRequests[index];
+                                      final fullname =
+                                          '${request['student']['firstname']} ${request['student']['lastname']}';
+                                      final description =
+                                          request['description'] ??
+                                              'No Description';
+
+                                      return Card(
+                                        child: ListTile(
+                                          title: Text(fullname),
+                                          subtitle: Text(description),
+                                          trailing: ElevatedButton(
+                                            onPressed: () =>
+                                                _showScheduleDialog(index),
+                                            child: Text('Set Schedule'),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                                  Color(0xFF00848B),
+                                              foregroundColor: Colors.white,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ],
-                                  );
-                                }).toList(),
-                              ],
-                            ),
-                          ],
-                        ),
+                                      );
+                                    },
+                                  )
+                                : Center(
+                                    child: Text(
+                                      'No consultation requests found.',
+                                      style: TextStyle(color: Colors.grey),
+                                    ),
+                                  ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                  SizedBox(width: 16), // Add space between the cards
-                  // My Consultation Schedule Card (Right)
+                  SizedBox(width: 16),
+// My Schedule Section
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Color(0xFFF3F8F8),
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(12.0),
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'My Consultation Schedule',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF00B2B0),
-                              ),
+                      padding: EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'My Schedule',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF00848B),
                             ),
-                            SizedBox(height: 10),
-                            Table(
-                              columnWidths: const {
-                                0: FlexColumnWidth(2),
-                                1: FlexColumnWidth(1),
-                                2: FlexColumnWidth(1),
-                                3: FlexColumnWidth(1),
-                              },
-                              children: [
-                                TableRow(
-                                  children: [
-                                    Padding(
-                                      padding: const EdgeInsets.all(8.0),
-                                      child: Text('Name'),
+                          ),
+                          SizedBox(height: 10),
+                          Expanded(
+                            child: scheduledConsultations.isNotEmpty
+                                ? ListView.builder(
+                                    itemCount: scheduledConsultations.length,
+                                    itemBuilder: (context, index) {
+                                      final schedule =
+                                          scheduledConsultations[index];
+                                      final fullname = schedule['student'] !=
+                                              null
+                                          ? '${schedule['student']['firstname'] ?? 'Unknown'} ${schedule['student']['lastname'] ?? ''}'
+                                          : 'Unknown Student';
+                                      final scheduleTime =
+                                          schedule['schedule'] != null
+                                              ? DateTime.tryParse(
+                                                  schedule['schedule'])
+                                              : null;
+                                      final sessionType =
+                                          schedule['sessiontype'] ?? 'N/A';
+                                      final location =
+                                          schedule['location'] ?? 'N/A';
+                                      final status =
+                                          schedule['consultation_status'] ??
+                                              'Unknown';
+
+                                      return Card(
+                                        margin:
+                                            EdgeInsets.symmetric(vertical: 8.0),
+                                        child: ListTile(
+                                          title: Text(fullname),
+                                          subtitle: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Date: ${scheduleTime != null ? DateFormat('yyyy-MM-dd').format(scheduleTime) : 'N/A'}',
+                                              ),
+                                              Text(
+                                                'Time: ${scheduleTime != null ? DateFormat('hh:mm a').format(scheduleTime) : 'N/A'}',
+                                              ),
+                                              Text('Status: $status'),
+                                              Text('Type: $sessionType'),
+                                              Text('Location: $location'),
+                                            ],
+                                          ),
+                                          trailing: ElevatedButton(
+                                            onPressed: () =>
+                                                _showScheduleDialog(index,
+                                                    isReschedule: true),
+                                            child: Text('Reschedule'),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                                  Color(0xFF00848B),
+                                              foregroundColor: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  )
+                                : Center(
+                                    child: Text(
+                                      'No scheduled consultations.',
+                                      style: TextStyle(color: Colors.grey),
                                     ),
-                                    Padding(
-                                      padding: const EdgeInsets.all(8.0),
-                                      child: Text('Date'),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.all(8.0),
-                                      child: Text('Time'),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.all(8.0),
-                                      child: Text('Action'),
-                                    ),
-                                  ],
-                                ),
-                                ...scheduledConsultations.map((schedule) {
-                                  return TableRow(
-                                    children: [
-                                      Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Text(
-                                            '${schedule['firstname']} ${schedule['lastname']}'),
-                                      ),
-                                      Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Text(schedule['date']),
-                                      ),
-                                      Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Text(schedule['time']),
-                                      ),
-                                      Padding(
-                                        padding: const EdgeInsets.all(8.0),
-                                        child: Text('Scheduled'),
-                                      ),
-                                    ],
-                                  );
-                                }).toList(),
-                              ],
-                            ),
-                          ],
-                        ),
+                                  ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -557,6 +722,7 @@ class _ConsultationState extends State<Consultation> {
 
 void main() {
   runApp(MaterialApp(
-    home: Consultation(email: 'Guidance@uic.edu.ph'), // Pass the email argument
+    home: Consultation(userId: 'user-id-placeholder'),
+    debugShowCheckedModeBanner: false,
   ));
 }

@@ -6,11 +6,13 @@ import 'guidanceprofile/guidanceprofile.dart';
 import 'messages.dart';
 import 'notification.dart';
 import 'consultation.dart';
+import 'upload.dart';
+import 'login.dart';
 
 class Summaryreports extends StatefulWidget {
-  final String email;
+  final String userId;
 
-  Summaryreports({required this.email});
+  Summaryreports({required this.userId});
 
   @override
   _SummaryreportsState createState() => _SummaryreportsState();
@@ -21,7 +23,10 @@ class _SummaryreportsState extends State<Summaryreports> {
   String selectedYear = '2024'; // Default dropdown value for year
   Map<String, dynamic>? profileData;
   List<Map<String, dynamic>> collegesData = [];
+  String? userEmail;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  final SupabaseClient supabase = Supabase.instance.client;
   final List<String> stressTypes = [
     '90-100',
     '70-80',
@@ -40,89 +45,99 @@ class _SummaryreportsState extends State<Summaryreports> {
   }
 
   Future<void> fetchProfileData() async {
-    final response = await Supabase.instance.client
-        .from('guidancecounselor')
-        .select()
-        .eq('email', widget.email)
-        .single();
+    final response = await supabase
+        .from('user_guidance_profiles')
+        .select('firstname, lastname, profile_image_url, college_handled')
+        .eq('user_id', widget.userId)
+        .single()
+        .execute();
 
     if (response.status == 200 && response.data != null) {
       setState(() {
         profileData = response.data;
       });
     } else {
-      print(
-          "Error fetching profile data: ${response.error?.message ?? "Unknown error"}");
+      print("Error fetching profile data. Status: ${response.status}");
     }
   }
 
   Future<void> fetchCollegeStressData() async {
-    // Query data based on selected stress range and year
     final int minStress = int.parse(selectedType.split('-')[0]);
     final int maxStress = int.parse(selectedType.split('-')[1]);
 
-    final response = await Supabase.instance.client
-        .from('stress')
-        .select(
-            'studentid, stress_scale, timestamp, student:studentid (college)')
-        .gte('stress_scale', minStress)
-        .lte('stress_scale', maxStress);
+    try {
+      final response = await Supabase.instance.client
+          .from('stress')
+          .select(
+              'student_id, stress_scale, timestamp, student:student_id (college)')
+          .gte('stress_scale', minStress)
+          .lte('stress_scale', maxStress)
+          .gte('timestamp',
+              DateTime(int.parse(selectedYear), 1, 1).toIso8601String())
+          .lte('timestamp',
+              DateTime(int.parse(selectedYear), 12, 31).toIso8601String())
+          .execute();
 
-    if (response.status == 200 && response.data != null) {
-      final data = response.data as List<dynamic>;
-      final Map<String, Map<String, int>> tempData = {};
+      if (response.status == 200 && response.data != null) {
+        final List<dynamic> data = response.data;
+        final Map<String, Map<String, int>> tempData = {};
 
-      for (var entry in data) {
-        final college = entry['student']['college'];
-        final timestamp = DateTime.parse(entry['timestamp']);
-        final month = timestamp.month;
+        for (var entry in data) {
+          final college = entry['student']['college'];
+          final timestamp = DateTime.parse(entry['timestamp']);
+          final month = timestamp.month;
 
-        if (!tempData.containsKey(college)) {
-          tempData[college] = {
-            'Jan': 0,
-            'Feb': 0,
-            'Mar': 0,
-            'Apr': 0,
-            'May': 0,
-            'Jun': 0,
-            'Jul': 0,
-            'Aug': 0,
-            'Sep': 0,
-            'Oct': 0,
-            'Nov': 0,
-            'Dec': 0,
-          };
+          if (!tempData.containsKey(college)) {
+            tempData[college] = {
+              'Jan': 0,
+              'Feb': 0,
+              'Mar': 0,
+              'Apr': 0,
+              'May': 0,
+              'Jun': 0,
+              'Jul': 0,
+              'Aug': 0,
+              'Sep': 0,
+              'Oct': 0,
+              'Nov': 0,
+              'Dec': 0,
+            };
+          }
+
+          final monthKey = [
+            'Jan',
+            'Feb',
+            'Mar',
+            'Apr',
+            'May',
+            'Jun',
+            'Jul',
+            'Aug',
+            'Sep',
+            'Oct',
+            'Nov',
+            'Dec'
+          ][month - 1];
+
+          tempData[college]![monthKey] = tempData[college]![monthKey]! + 1;
         }
 
-        final monthKey = [
-          'Jan',
-          'Feb',
-          'Mar',
-          'Apr',
-          'May',
-          'Jun',
-          'Jul',
-          'Aug',
-          'Sep',
-          'Oct',
-          'Nov',
-          'Dec'
-        ][month - 1];
-
-        tempData[college]![monthKey] = tempData[college]![monthKey]! + 1;
+        setState(() {
+          collegesData = tempData.entries.map((entry) {
+            return {
+              'College': entry.key,
+              ...entry.value,
+            };
+          }).toList();
+        });
+      } else {
+        print('Error fetching stress data. Status: ${response.status}');
+        if (response.data == null) {
+          print('No data available for the specified criteria.');
+        }
       }
-
-      setState(() {
-        collegesData = tempData.entries.map((entry) {
-          return {
-            'College': entry.key,
-            ...entry.value,
-          };
-        }).toList();
-      });
-    } else {
-      print(
-          "Error fetching stress data: ${response.error?.message ?? "Unknown error"}");
+    } catch (e) {
+      print('Exception while fetching stress data: $e');
     }
   }
 
@@ -136,7 +151,7 @@ class _SummaryreportsState extends State<Summaryreports> {
       onChanged: (String? newValue) {
         setState(() {
           onChanged(newValue!);
-          fetchCollegeStressData(); // Re-fetch data when dropdown changes
+          fetchCollegeStressData();
         });
       },
       items: items.map<DropdownMenuItem<String>>((String item) {
@@ -160,154 +175,153 @@ class _SummaryreportsState extends State<Summaryreports> {
     );
   }
 
+  Widget _buildDrawer() {
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(color: Color(0xFF00848B)),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircleAvatar(
+                  radius: 40,
+                  backgroundImage: profileData?['profile_image_url'] != null
+                      ? NetworkImage(profileData!['profile_image_url'])
+                      : AssetImage('assets/profile.png') as ImageProvider,
+                ),
+                SizedBox(height: 5),
+                Text(
+                  '${profileData?['firstname'] ?? 'Admin'} ${profileData?['lastname'] ?? ''}',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  userEmail ?? 'Email Not Available',
+                  style: TextStyle(color: Colors.white, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+          _buildDrawerItem(
+            icon: Icons.home,
+            title: 'Home',
+            onTap: () => Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => Home(userId: widget.userId)),
+            ),
+          ),
+          _buildDrawerItem(
+            icon: Icons.list,
+            title: 'Student List',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => Studentlist(userId: widget.userId)),
+            ),
+          ),
+          _buildDrawerItem(
+            icon: Icons.person,
+            title: 'Profile',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => GuidanceProfile(userId: widget.userId)),
+            ),
+          ),
+          _buildDrawerItem(
+            icon: Icons.message,
+            title: 'Messages',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => Messages(userId: widget.userId)),
+            ),
+          ),
+          _buildDrawerItem(
+            icon: Icons.notifications,
+            title: 'Notification',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) =>
+                      NotificationPage(userId: widget.userId)),
+            ),
+          ),
+          _buildDrawerItem(
+            icon: Icons.local_hospital,
+            title: 'Consultation',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) =>
+                      NotificationPage(userId: widget.userId)),
+            ),
+          ),
+          _buildDrawerItem(
+            icon: Icons.summarize,
+            title: 'Summary Reports',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (context) => Summaryreports(userId: widget.userId)),
+            ),
+          ),
+          _buildDrawerItem(
+            icon: Icons.upload,
+            title: 'Upload',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => Upload(userId: widget.userId),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.logout, color: Colors.red),
+            title: Text('Sign Out', style: TextStyle(color: Colors.red)),
+            onTap: () async {
+              await supabase.auth.signOut();
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => LoginPage()),
+                (route) => false,
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: Color(0xFFF3F8F8),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              decoration: BoxDecoration(color: Color(0xFF00848B)),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircleAvatar(
-                    backgroundImage: profileData?['profile_image_url'] != null
-                        ? NetworkImage(profileData!['profile_image_url'])
-                        : AssetImage('assets/profile.png') as ImageProvider,
-                    radius: 40,
-                  ),
-                  SizedBox(height: 3),
-                  Text(
-                    profileData?['firstname'] ?? 'Nariah Sy',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  SizedBox(height: 5),
-                  Text(
-                    profileData?['email'] ?? 'Guidance@uic.edu.ph',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            _buildDrawerItem(
-              icon: Icons.home,
-              title: 'Home',
-              onTap: () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => Home(email: widget.email),
-                ),
-              ),
-            ),
-            _buildDrawerItem(
-              icon: Icons.list,
-              title: 'Student List',
-              onTap: () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => Studentlist(email: widget.email),
-                ),
-              ),
-            ),
-            _buildDrawerItem(
-              icon: Icons.person,
-              title: 'Profile',
-              onTap: () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => GuidanceProfile(email: widget.email),
-                ),
-              ),
-            ),
-            _buildDrawerItem(
-              icon: Icons.message,
-              title: 'Messages',
-              onTap: () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                    builder: (context) => Messages(email: widget.email)),
-              ),
-            ),
-            _buildDrawerItem(
-              icon: Icons.notifications,
-              title: 'Notification',
-              onTap: () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => NotificationPage(email: widget.email),
-                ),
-              ),
-            ),
-            _buildDrawerItem(
-              icon: Icons.local_hospital,
-              title: 'Consultation',
-              onTap: () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => Consultation(email: widget.email),
-                ),
-              ),
-            ),
-            _buildDrawerItem(
-              icon: Icons.summarize,
-              title: 'Summary Reports',
-              onTap: () {
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.logout, color: Colors.red),
-              title: Text(
-                'Sign Out',
-                style: TextStyle(color: Colors.red),
-              ),
-              onTap: () {
-                // Add sign-out logic here
-              },
-            ),
-          ],
-        ),
-      ),
+      drawer: _buildDrawer(),
       body: Padding(
         padding: EdgeInsets.all(16.0),
         child: Column(
           children: [
-            Builder(
-              builder: (BuildContext context) {
-                return Row(
-                  children: [
-                    IconButton(
-                      icon: Image.asset(
-                        'assets/menu.png',
-                        width: 30,
-                        height: 30,
-                        fit: BoxFit.contain,
-                      ),
-                      onPressed: () {
-                        Scaffold.of(context).openDrawer();
-                      },
-                    ),
-                    SizedBox(width: 1),
-                    Image.asset(
-                      'assets/coco1.png',
-                      width: 200,
-                      height: 70,
-                      fit: BoxFit.contain,
-                    ),
-                  ],
-                );
-              },
+            Row(
+              children: [
+                IconButton(
+                  icon: Image.asset('assets/menu.png', width: 30, height: 30),
+                  onPressed: () => _scaffoldKey.currentState!.openDrawer(),
+                ),
+                SizedBox(width: 1),
+                Image.asset('assets/coco1.png', width: 200, height: 70),
+              ],
             ),
+            SizedBox(height: 20),
             Expanded(
               child: SingleChildScrollView(
                 child: Center(
@@ -332,8 +346,7 @@ class _SummaryreportsState extends State<Summaryreports> {
                           ),
                           SizedBox(height: 20),
                           Container(
-                            width: 1300,
-                            padding: const EdgeInsets.all(40.0),
+                            padding: const EdgeInsets.all(16.0),
                             decoration: BoxDecoration(
                               color: Color(0xFFF4F6F6),
                               borderRadius: BorderRadius.circular(12.0),
@@ -382,57 +395,36 @@ class _SummaryreportsState extends State<Summaryreports> {
                                       TableRow(
                                         children: [
                                           Padding(
-                                            padding: const EdgeInsets.all(1.0),
-                                            child: Text('College'),
+                                            padding: const EdgeInsets.all(8.0),
+                                            child: Text(
+                                              'College',
+                                              style: TextStyle(
+                                                  fontWeight: FontWeight.bold),
+                                            ),
                                           ),
-                                          Padding(
-                                            padding: const EdgeInsets.all(1.0),
-                                            child: Text('January'),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.all(1.0),
-                                            child: Text('February'),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.all(1.0),
-                                            child: Text('March'),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.all(1.0),
-                                            child: Text('April'),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.all(1.0),
-                                            child: Text('May'),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.all(1.0),
-                                            child: Text('June'),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.all(1.0),
-                                            child: Text('July'),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.all(1.0),
-                                            child: Text('August'),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.all(1.0),
-                                            child: Text('September'),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.all(1.0),
-                                            child: Text('October'),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.all(1.0),
-                                            child: Text('November'),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.all(1.0),
-                                            child: Text('December'),
-                                          ),
+                                          ...[
+                                            'Jan',
+                                            'Feb',
+                                            'Mar',
+                                            'Apr',
+                                            'May',
+                                            'Jun',
+                                            'Jul',
+                                            'Aug',
+                                            'Sep',
+                                            'Oct',
+                                            'Nov',
+                                            'Dec'
+                                          ].map((month) => Padding(
+                                                padding:
+                                                    const EdgeInsets.all(8.0),
+                                                child: Text(
+                                                  month,
+                                                  style: TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.bold),
+                                                ),
+                                              )),
                                         ],
                                       ),
                                       ...collegesData.map((college) {
@@ -443,78 +435,25 @@ class _SummaryreportsState extends State<Summaryreports> {
                                                   const EdgeInsets.all(8.0),
                                               child: Text(college['College']),
                                             ),
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.all(8.0),
-                                              child: Text(
-                                                  college['Jan'].toString()),
-                                            ),
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.all(8.0),
-                                              child: Text(
-                                                  college['Feb'].toString()),
-                                            ),
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.all(8.0),
-                                              child: Text(
-                                                  college['Mar'].toString()),
-                                            ),
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.all(8.0),
-                                              child: Text(
-                                                  college['Apr'].toString()),
-                                            ),
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.all(8.0),
-                                              child: Text(
-                                                  college['May'].toString()),
-                                            ),
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.all(8.0),
-                                              child: Text(
-                                                  college['Jun'].toString()),
-                                            ),
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.all(8.0),
-                                              child: Text(
-                                                  college['Jul'].toString()),
-                                            ),
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.all(8.0),
-                                              child: Text(
-                                                  college['Aug'].toString()),
-                                            ),
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.all(8.0),
-                                              child: Text(
-                                                  college['Sep'].toString()),
-                                            ),
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.all(8.0),
-                                              child: Text(
-                                                  college['Oct'].toString()),
-                                            ),
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.all(8.0),
-                                              child: Text(
-                                                  college['Nov'].toString()),
-                                            ),
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.all(8.0),
-                                              child: Text(
-                                                  college['Dec'].toString()),
-                                            ),
+                                            ...[
+                                              'Jan',
+                                              'Feb',
+                                              'Mar',
+                                              'Apr',
+                                              'May',
+                                              'Jun',
+                                              'Jul',
+                                              'Aug',
+                                              'Sep',
+                                              'Oct',
+                                              'Nov',
+                                              'Dec'
+                                            ].map((month) => Padding(
+                                                  padding:
+                                                      const EdgeInsets.all(8.0),
+                                                  child: Text(college[month]
+                                                      .toString()),
+                                                )),
                                           ],
                                         );
                                       }).toList(),
@@ -524,7 +463,6 @@ class _SummaryreportsState extends State<Summaryreports> {
                               ],
                             ),
                           ),
-                          SizedBox(height: 20),
                         ],
                       ),
                     ),
@@ -541,7 +479,7 @@ class _SummaryreportsState extends State<Summaryreports> {
 
 void main() {
   runApp(MaterialApp(
-    home: Summaryreports(email: 'Guidance@uic.edu.ph'),
+    home: Summaryreports(userId: 'sample_user_id'),
     debugShowCheckedModeBanner: false,
   ));
 }

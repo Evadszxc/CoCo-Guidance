@@ -7,11 +7,13 @@ class EditProfile extends StatefulWidget {
   final String firstname;
   final String lastname;
   final String email;
+  final String userId; // Add this field
 
   EditProfile({
     required this.firstname,
     required this.lastname,
     required this.email,
+    required this.userId, // Mark as required
   });
 
   @override
@@ -21,41 +23,45 @@ class EditProfile extends StatefulWidget {
 class _EditProfileState extends State<EditProfile> {
   late TextEditingController _firstnameController;
   late TextEditingController _lastnameController;
-  late TextEditingController _emailController;
   late TextEditingController _collegeHandledController;
 
   Uint8List? _profileImage;
   String? _profileImageUrl = '';
+  bool isLoading = true; // Add loading state
 
   @override
   void initState() {
     super.initState();
-    _firstnameController = TextEditingController();
-    _lastnameController = TextEditingController();
-    _emailController = TextEditingController();
+    _firstnameController = TextEditingController(text: widget.firstname);
+    _lastnameController = TextEditingController(text: widget.lastname);
     _collegeHandledController = TextEditingController();
     fetchProfileData();
   }
 
   Future<void> fetchProfileData() async {
-    final response = await Supabase.instance.client
-        .from('guidancecounselor')
-        .select<Map<String, dynamic>>()
-        .eq('email', widget.email)
-        .single();
+    try {
+      setState(() => isLoading = true);
+      final response = await Supabase.instance.client
+          .from('user_guidance_profiles')
+          .select()
+          .eq('user_id', widget.userId) // Use user_id instead of email
+          .single();
 
-    if (response != null) {
-      setState(() {
-        _firstnameController.text = response['firstname'] ?? '';
-        _lastnameController.text = response['lastname'] ?? '';
-        _emailController.text = response['email'] ?? '';
-        _collegeHandledController.text = response['college_handled'] ?? '';
-        _profileImageUrl = response['profile_image_url'] ?? '';
-      });
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error fetching profile data.')),
-      );
+      if (response != null) {
+        final data = response as Map<String, dynamic>; // Cast response to Map
+        setState(() {
+          _firstnameController.text = data['firstname'] ?? '';
+          _lastnameController.text = data['lastname'] ?? '';
+          _collegeHandledController.text = data['college_handled'] ?? '';
+          _profileImageUrl = data['profile_image_url'] ?? '';
+        });
+      } else {
+        print("Error: Failed to fetch profile data.");
+      }
+    } catch (e) {
+      print("Error in fetchProfileData: $e");
+    } finally {
+      setState(() => isLoading = false);
     }
   }
 
@@ -70,15 +76,13 @@ class _EditProfileState extends State<EditProfile> {
         });
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking image: $e')),
-      );
+      print("Error picking image: $e");
     }
   }
 
   Future<String?> _uploadImage(Uint8List imageBytes) async {
     final fileName =
-        '${widget.email}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        '${Supabase.instance.client.auth.currentUser?.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
     try {
       final response = await Supabase.instance.client.storage
@@ -86,20 +90,23 @@ class _EditProfileState extends State<EditProfile> {
           .uploadBinary(fileName, imageBytes,
               fileOptions: const FileOptions(upsert: true));
 
-      if (response != null) {
-        // If upload is successful, get the public URL
-        return Supabase.instance.client.storage
+      if (response.isNotEmpty) {
+        final publicUrl = Supabase.instance.client.storage
             .from('profile_image_url')
             .getPublicUrl(fileName);
+
+        return publicUrl;
       } else {
+        print("Error uploading image. Response: $response");
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Image upload failed.')),
+          SnackBar(content: Text('Image upload failed. Please try again.')),
         );
         return null;
       }
     } catch (e) {
+      print("Exception during image upload: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Image upload failed: $e')),
+        SnackBar(content: Text('Image upload failed. Please try again.')),
       );
       return null;
     }
@@ -108,32 +115,51 @@ class _EditProfileState extends State<EditProfile> {
   Future<void> _saveProfile() async {
     String firstname = _firstnameController.text.trim();
     String lastname = _lastnameController.text.trim();
-    String email = _emailController.text.trim();
     String collegeHandled = _collegeHandledController.text.trim();
 
+    // Use the existing profile image URL if no new image is uploaded
+    String? imageUrl = _profileImageUrl;
+
+    // Upload the image if a new one is selected
     if (_profileImage != null) {
-      final imageUrl = await _uploadImage(_profileImage!);
+      imageUrl = await _uploadImage(_profileImage!);
       if (imageUrl != null) {
-        _profileImageUrl = imageUrl;
+        _profileImageUrl = imageUrl; // Update the profile image URL
       }
     }
 
-    final response =
-        await Supabase.instance.client.from('guidancecounselor').update({
-      'firstname': firstname,
-      'lastname': lastname,
-      'email': email,
-      'college_handled': collegeHandled,
-      'profile_image_url': _profileImageUrl,
-    }).eq('email', widget.email);
+    try {
+      // Update the profile data in Supabase
+      final response = await Supabase.instance.client
+          .from('user_guidance_profiles')
+          .update({
+            'firstname': firstname,
+            'lastname': lastname,
+            'college_handled': collegeHandled,
+            'profile_image_url': _profileImageUrl, // Update image URL
+          })
+          .eq('user_id', widget.userId)
+          .execute();
 
-    if (response != null) {
+      // Check the response status
+      if (response.status == 200 || response.status == 204) {
+        // Profile updated successfully
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Profile updated successfully')),
+        );
+        Navigator.pop(context); // Navigate back to the previous screen
+      } else {
+        // Failed to update the profile
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Failed to update profile: ${response.status}')),
+        );
+      }
+    } catch (e) {
+      // Handle unexpected errors
+      print("Error saving profile: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile updated successfully.')),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error updating profile.')),
+        SnackBar(content: Text('Failed to save profile. Please try again.')),
       );
     }
   }
@@ -142,98 +168,106 @@ class _EditProfileState extends State<EditProfile> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Color(0xFFF3F8F8),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Center(
-            child: Container(
-              width: 600,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12.0),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Guidance Profile',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF00848B),
-                    ),
-                  ),
-                  SizedBox(height: 20),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      CircleAvatar(
-                        radius: 40,
-                        backgroundImage: _profileImage != null
-                            ? MemoryImage(_profileImage!)
-                            : (_profileImageUrl != null &&
-                                        _profileImageUrl!.isNotEmpty
-                                    ? NetworkImage(_profileImageUrl!)
-                                    : AssetImage('assets/profile.png'))
-                                as ImageProvider<Object>?,
-                        backgroundColor: Colors.grey[200],
+      body: isLoading
+          ? Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 600,
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12.0),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Guidance Profile',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF00848B),
+                              ),
+                            ),
+                            SizedBox(height: 20),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                CircleAvatar(
+                                  radius: 40,
+                                  backgroundImage: _profileImage != null
+                                      ? MemoryImage(_profileImage!)
+                                      : (_profileImageUrl?.isNotEmpty == true
+                                              ? NetworkImage(_profileImageUrl!)
+                                              : AssetImage(
+                                                  'assets/profile.png'))
+                                          as ImageProvider<Object>?,
+                                  backgroundColor: Colors.grey[200],
+                                ),
+                                SizedBox(width: 20),
+                                ElevatedButton(
+                                  onPressed: _pickImage,
+                                  child: Text('Change Photo'),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: 20),
+                            TextField(
+                              controller: _firstnameController,
+                              decoration: InputDecoration(
+                                labelText: 'Firstname',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            SizedBox(height: 20),
+                            TextField(
+                              controller: _lastnameController,
+                              decoration: InputDecoration(
+                                labelText: 'Lastname',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            SizedBox(height: 20),
+                            TextField(
+                              controller:
+                                  TextEditingController(text: widget.email),
+                              decoration: InputDecoration(
+                                labelText: 'Email',
+                                border: OutlineInputBorder(),
+                              ),
+                              readOnly: true, // Make email non-editable
+                            ),
+                            SizedBox(height: 20),
+                            TextField(
+                              controller: _collegeHandledController,
+                              decoration: InputDecoration(
+                                labelText: 'College Handled',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            SizedBox(height: 20),
+                            Center(
+                              child: ElevatedButton(
+                                onPressed: _saveProfile,
+                                child: Text(
+                                  'Save',
+                                  style: TextStyle(fontSize: 16),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      SizedBox(width: 20),
-                      ElevatedButton(
-                        onPressed: _pickImage,
-                        child: Text('Change Photo'),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 20),
-                  TextField(
-                    controller: _firstnameController,
-                    decoration: InputDecoration(
-                      labelText: 'Firstname',
-                      border: OutlineInputBorder(),
                     ),
-                  ),
-                  SizedBox(height: 20),
-                  TextField(
-                    controller: _lastnameController,
-                    decoration: InputDecoration(
-                      labelText: 'Lastname',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  SizedBox(height: 10),
-                  TextField(
-                    controller: _emailController,
-                    decoration: InputDecoration(
-                      labelText: 'Email',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  SizedBox(height: 10),
-                  TextField(
-                    controller: _collegeHandledController,
-                    decoration: InputDecoration(
-                      labelText: 'College Handled',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  SizedBox(height: 20),
-                  Center(
-                    child: ElevatedButton(
-                      onPressed: _saveProfile,
-                      child: Text(
-                        'Save',
-                        style: TextStyle(fontSize: 16),
-                      ),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-        ),
-      ),
     );
   }
 }

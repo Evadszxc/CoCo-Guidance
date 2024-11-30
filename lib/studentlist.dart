@@ -1,73 +1,91 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:guidance/guidanceprofile/guidanceprofile.dart';
-import 'home.dart';
+import 'guidanceprofile/guidanceprofile.dart';
 import 'messages.dart';
 import 'notification.dart';
 import 'consultation.dart';
 import 'summaryreports.dart';
+import 'home.dart';
 import 'studentprofile.dart';
+import 'login.dart';
+import 'upload.dart';
 
 class Studentlist extends StatefulWidget {
-  final String email;
+  final String userId;
 
-  Studentlist({required this.email});
+  Studentlist({required this.userId});
 
   @override
   _StudentlistState createState() => _StudentlistState();
 }
 
 class _StudentlistState extends State<Studentlist> {
+  final SupabaseClient supabase = Supabase.instance.client;
+
   List<dynamic> students = [];
   bool isLoading = true;
   String? errorMessage;
   Map<String, dynamic>? profileData;
+  String? userEmail;
 
   @override
   void initState() {
     super.initState();
-    fetchStudentData();
-    fetchProfileData();
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    try {
+      setState(() {
+        isLoading = true;
+      });
+      await Future.wait([fetchStudentData(), fetchProfileData()]);
+    } catch (e) {
+      print("Error initializing data: $e");
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
+    }
   }
 
   Future<void> fetchProfileData() async {
-    final response = await Supabase.instance.client
-        .from('guidancecounselor')
-        .select()
-        .eq('email', widget.email)
+    final response = await supabase
+        .from('user_guidance_profiles')
+        .select('firstname, lastname, profile_image_url')
+        .eq('user_id', widget.userId)
         .single()
         .execute();
 
     if (response.status == 200 && response.data != null) {
       setState(() {
         profileData = response.data;
+        userEmail = supabase.auth.currentUser?.email;
       });
     } else {
-      print(
-          "Error fetching profile data: ${response.status == 404 ? "Not Found" : "Unknown error"}");
+      print("Error fetching profile data: ${response.status}");
     }
   }
 
   Future<void> fetchStudentData() async {
     try {
       final response =
-          await Supabase.instance.client.from('student').select().execute();
+          await supabase.rpc('get_student_list_with_email').execute();
 
       if (response.status == 200 && response.data != null) {
         setState(() {
-          students = response.data;
+          students = response.data as List<dynamic>;
           isLoading = false;
         });
       } else {
         setState(() {
-          errorMessage =
-              response.status == 404 ? "No data found" : "An error occurred";
+          errorMessage = 'Error: ${response.status}';
           isLoading = false;
         });
       }
     } catch (error) {
       setState(() {
-        errorMessage = error.toString();
+        errorMessage = 'Error: $error';
         isLoading = false;
       });
     }
@@ -79,16 +97,8 @@ class _StudentlistState extends State<Studentlist> {
     required VoidCallback onTap,
   }) {
     return ListTile(
-      leading: Icon(
-        icon,
-        color: Color(0xFF00848B),
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          color: Color(0xFF00848B),
-        ),
-      ),
+      leading: Icon(icon, color: Color(0xFF00848B)),
+      title: Text(title, style: TextStyle(color: Color(0xFF00848B))),
       onTap: onTap,
     );
   }
@@ -113,24 +123,19 @@ class _StudentlistState extends State<Studentlist> {
                     backgroundImage: profileData?['profile_image_url'] != null
                         ? NetworkImage(profileData!['profile_image_url'])
                         : AssetImage('assets/profile.png') as ImageProvider,
-                    backgroundColor: Colors.grey[200],
                   ),
-                  SizedBox(height: 3),
+                  SizedBox(height: 5),
                   Text(
-                    profileData?['firstname'] ?? 'Admin',
+                    '${profileData?['firstname'] ?? 'Admin'} ${profileData?['lastname'] ?? ''}',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  SizedBox(height: 5),
                   Text(
-                    profileData?['email'] ?? 'Admin@uic.edu.ph',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                    ),
+                    userEmail ?? 'Email Not Available', // Display email
+                    style: TextStyle(color: Colors.white, fontSize: 14),
                   ),
                 ],
               ),
@@ -138,61 +143,77 @@ class _StudentlistState extends State<Studentlist> {
             _buildDrawerItem(
               icon: Icons.home,
               title: 'Home',
-              onTap: () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => Home(email: widget.email),
-                ),
-              ),
+              onTap: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        Home(userId: supabase.auth.currentUser?.id ?? ''),
+                  ),
+                );
+              },
             ),
             _buildDrawerItem(
               icon: Icons.list,
               title: 'Student List',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => Studentlist(email: widget.email),
-                ),
-              ),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => Studentlist(userId: widget.userId),
+                  ),
+                );
+              },
             ),
             _buildDrawerItem(
               icon: Icons.person,
               title: 'Profile',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => GuidanceProfile(email: widget.email),
-                ),
-              ),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        GuidanceProfile(userId: widget.userId),
+                  ),
+                );
+              },
             ),
             _buildDrawerItem(
               icon: Icons.message,
               title: 'Messages',
-              onTap: () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                    builder: (context) => Messages(email: widget.email)),
-              ),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => Messages(userId: widget.userId),
+                  ),
+                );
+              },
             ),
             _buildDrawerItem(
               icon: Icons.notifications,
               title: 'Notification',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => NotificationPage(email: widget.email),
-                ),
-              ),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        NotificationPage(userId: widget.userId),
+                  ),
+                );
+              },
             ),
             _buildDrawerItem(
               icon: Icons.local_hospital,
               title: 'Consultation',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => Consultation(email: widget.email),
-                ),
-              ),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => Consultation(userId: widget.userId),
+                  ),
+                );
+              },
             ),
             _buildDrawerItem(
               icon: Icons.summarize,
@@ -201,8 +222,32 @@ class _StudentlistState extends State<Studentlist> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => Summaryreports(email: widget.email),
+                    builder: (context) => Summaryreports(userId: widget.userId),
                   ),
+                );
+              },
+            ),
+            _buildDrawerItem(
+              icon: Icons.upload,
+              title: 'Upload',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => Upload(userId: widget.userId),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.logout, color: Colors.red),
+              title: Text('Sign Out', style: TextStyle(color: Colors.red)),
+              onTap: () async {
+                await supabase.auth.signOut();
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (context) => LoginPage()),
+                  (route) => false,
                 );
               },
             ),
@@ -240,10 +285,9 @@ class _StudentlistState extends State<Studentlist> {
               },
             ),
             Expanded(
-              child: Center(
+              child: SingleChildScrollView(
                 child: Container(
                   width: 1200,
-                  height: 500,
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(12.0),
@@ -262,219 +306,108 @@ class _StudentlistState extends State<Studentlist> {
                           ),
                         ),
                         SizedBox(height: 20),
-                        Expanded(
-                          child: Container(
-                            width: 1300,
-                            decoration: BoxDecoration(
-                              color: Color(0xFFF4F6F6),
-                              borderRadius: BorderRadius.circular(12.0),
+                        Table(
+                          columnWidths: const {
+                            0: FlexColumnWidth(1.5),
+                            1: FlexColumnWidth(1.5),
+                            2: FlexColumnWidth(1.5),
+                            3: FlexColumnWidth(1.5),
+                            4: FlexColumnWidth(1),
+                          },
+                          children: [
+                            TableRow(
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.all(6.0),
+                                  child: Text('Email',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold)),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.all(6.0),
+                                  child: Text('Firstname',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold)),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.all(6.0),
+                                  child: Text('Lastname',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold)),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.all(6.0),
+                                  child: Text('College',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold)),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.all(6.0),
+                                  child: Text('Action',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold)),
+                                ),
+                              ],
                             ),
-                            child: Padding(
-                              padding: EdgeInsets.all(12.0),
-                              child: Stack(
+                            for (var student in students)
+                              TableRow(
                                 children: [
-                                  if (isLoading)
-                                    Center(child: CircularProgressIndicator())
-                                  else if (errorMessage != null)
-                                    Center(child: Text('Error: $errorMessage'))
-                                  else if (students.isEmpty)
-                                    Center(child: Text('No students found'))
-                                  else
-                                    Column(
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Spacer(),
-                                            Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.end,
-                                              children: [
-                                                Container(
-                                                  width: 200,
-                                                  height: 35,
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.white,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8.0),
-                                                    border: Border.all(
-                                                        color: Colors.grey),
-                                                  ),
-                                                  child: TextField(
-                                                    decoration: InputDecoration(
-                                                      hintText: 'Search...',
-                                                      prefixIcon:
-                                                          Icon(Icons.search),
-                                                      border: InputBorder.none,
-                                                      contentPadding:
-                                                          EdgeInsets.symmetric(
-                                                              vertical: 8.0),
-                                                    ),
-                                                  ),
-                                                ),
-                                                SizedBox(height: 4),
-                                                Divider(
-                                                  color: Colors.grey,
-                                                  thickness: 1,
-                                                ),
-                                              ],
+                                  Padding(
+                                    padding: const EdgeInsets.all(8.0),
+                                    child: Text(student['email'] ?? 'N/A'),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.all(8.0),
+                                    child: Text(student['firstname'] ?? 'N/A'),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.all(8.0),
+                                    child: Text(student['lastname'] ?? 'N/A'),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.all(8.0),
+                                    child: Text(student['college'] ?? 'N/A'),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.all(4.0),
+                                    child: TextButton(
+                                      onPressed: () {
+                                        // Navigate to the Studentprofile screen
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                Studentprofile(
+                                              email: widget
+                                                  .userId, // Guidance user's email (if needed)
+                                              studentEmail: student['email'] ??
+                                                  '', // Pass student email
+                                              studentId: student['student_id'],
+                                              firstname: student['firstname'] ??
+                                                  '', // Pass student firstname
+                                              lastname: student['lastname'] ??
+                                                  '', // Pass student lastname
+                                              college: student['college'] ??
+                                                  '', // Pass student college
                                             ),
-                                          ],
+                                          ),
+                                        );
+                                      },
+                                      style: TextButton.styleFrom(
+                                        backgroundColor: Color(0xFF00848B),
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8.0),
                                         ),
-                                        SizedBox(height: 16),
-                                        Table(
-                                          columnWidths: const {
-                                            0: FlexColumnWidth(1.5),
-                                            1: FlexColumnWidth(1.5),
-                                            2: FlexColumnWidth(1.5),
-                                            3: FlexColumnWidth(1.5),
-                                            4: FlexColumnWidth(1),
-                                          },
-                                          children: [
-                                            TableRow(
-                                              children: [
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.all(6.0),
-                                                  child: Text('Email',
-                                                      style: TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.bold)),
-                                                ),
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.all(6.0),
-                                                  child: Text('Firstname',
-                                                      style: TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.bold)),
-                                                ),
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.all(6.0),
-                                                  child: Text('Lastname',
-                                                      style: TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.bold)),
-                                                ),
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.all(6.0),
-                                                  child: Text('College',
-                                                      style: TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.bold)),
-                                                ),
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.all(6.0),
-                                                  child: Text('Action',
-                                                      style: TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.bold)),
-                                                ),
-                                              ],
-                                            ),
-                                            for (var student in students)
-                                              TableRow(
-                                                children: [
-                                                  Padding(
-                                                    padding:
-                                                        const EdgeInsets.all(
-                                                            8.0),
-                                                    child: Text(
-                                                        student['email'] ?? ''),
-                                                  ),
-                                                  Padding(
-                                                    padding:
-                                                        const EdgeInsets.all(
-                                                            8.0),
-                                                    child: Text(
-                                                        student['firstname'] ??
-                                                            ''),
-                                                  ),
-                                                  Padding(
-                                                    padding:
-                                                        const EdgeInsets.all(
-                                                            8.0),
-                                                    child: Text(
-                                                        student['lastname'] ??
-                                                            ''),
-                                                  ),
-                                                  Padding(
-                                                    padding:
-                                                        const EdgeInsets.all(
-                                                            8.0),
-                                                    child: Text(
-                                                        student['college'] ??
-                                                            ''),
-                                                  ),
-                                                  Padding(
-                                                    padding:
-                                                        const EdgeInsets.all(
-                                                            4.0),
-                                                    child: TextButton(
-                                                      onPressed: () {
-                                                        Navigator.push(
-                                                          context,
-                                                          MaterialPageRoute(
-                                                            builder: (context) =>
-                                                                Studentprofile(
-                                                              email:
-                                                                  widget.email,
-                                                              studentEmail: student[
-                                                                      'email'] ??
-                                                                  'Unknown Email',
-                                                              firstname: student[
-                                                                      'firstname'] ??
-                                                                  'Unknown',
-                                                              lastname: student[
-                                                                      'lastname'] ??
-                                                                  'Unknown',
-                                                              college: student[
-                                                                      'college'] ??
-                                                                  'Unknown College',
-                                                              yearLevel: student[
-                                                                      'year_level'] ??
-                                                                  'Unknown Year',
-                                                            ),
-                                                          ),
-                                                        );
-                                                      },
-                                                      style:
-                                                          TextButton.styleFrom(
-                                                        backgroundColor:
-                                                            Color(0xFF00848B),
-                                                        foregroundColor:
-                                                            Colors.white,
-                                                        shape:
-                                                            RoundedRectangleBorder(
-                                                          borderRadius:
-                                                              BorderRadius
-                                                                  .circular(
-                                                                      8.0),
-                                                        ),
-                                                        padding: EdgeInsets
-                                                            .symmetric(
-                                                                horizontal: 18,
-                                                                vertical: 10),
-                                                      ),
-                                                      child:
-                                                          Text('View Details'),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                          ],
-                                        ),
-                                      ],
+                                      ),
+                                      child: Text('View Details'),
                                     ),
+                                  ),
                                 ],
                               ),
-                            ),
-                          ),
+                          ],
                         ),
-                        SizedBox(height: 16),
                       ],
                     ),
                   ),
@@ -486,4 +419,11 @@ class _StudentlistState extends State<Studentlist> {
       ),
     );
   }
+}
+
+void main() {
+  runApp(MaterialApp(
+    home: Studentlist(userId: 'sample-user-id'),
+    debugShowCheckedModeBanner: false,
+  ));
 }

@@ -13,12 +13,13 @@ void main() async {
   // Check if a session exists
   final session = Supabase.instance.client.auth.currentSession;
 
+  // Get userId from session if available
+  final userId = session?.user?.id;
+
   runApp(
     MyApp(
-      initialPage: session != null
-          ? Home(
-              email: session.user?.email ??
-                  '') // Navigate to Home if session exists
+      initialPage: userId != null
+          ? Home(userId: userId) // Pass userId to Home
           : LoginPage(), // Navigate to Login if no session
     ),
   );
