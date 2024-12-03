@@ -125,6 +125,8 @@ class _EditProfileState extends State<EditProfile> {
       imageUrl = await _uploadImage(_profileImage!);
       if (imageUrl != null) {
         _profileImageUrl = imageUrl; // Update the profile image URL
+      } else {
+        return; // Exit the function if image upload fails
       }
     }
 
@@ -139,11 +141,10 @@ class _EditProfileState extends State<EditProfile> {
             'profile_image_url': _profileImageUrl, // Update image URL
           })
           .eq('user_id', widget.userId)
-          .execute();
+          .select(); // Fetch the updated data to verify success
 
-      // Check the response status
-      if (response.status == 200 || response.status == 204) {
-        // Profile updated successfully
+      // Check if the response is not empty, indicating a successful update
+      if (response != null && response.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Profile updated successfully')),
         );
@@ -152,7 +153,7 @@ class _EditProfileState extends State<EditProfile> {
         // Failed to update the profile
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Failed to update profile: ${response.status}')),
+              content: Text('Failed to update profile. Please try again.')),
         );
       }
     } catch (e) {
@@ -187,7 +188,7 @@ class _EditProfileState extends State<EditProfile> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Guidance Profile',
+                              'GUIDANCE PROFILE',
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,

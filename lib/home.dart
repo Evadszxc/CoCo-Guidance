@@ -1,5 +1,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:guidance/chat/chat/pages/guidancelist.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'studentlist.dart';
@@ -31,6 +32,7 @@ class _HomeState extends State<Home> {
   bool isLoading = true;
   Map<String, dynamic>? profileData;
   String? userEmail;
+  bool isHovered = false;
 
   final Map<String, double> emotionMap = {
     'very happy': 5,
@@ -77,19 +79,22 @@ class _HomeState extends State<Home> {
   }
 
   Future<void> fetchProfileData() async {
-    final response = await supabase
-        .from('user_guidance_profiles')
-        .select('firstname, lastname, profile_image_url, college_handled')
-        .eq('user_id', widget.userId)
-        .single()
-        .execute();
+    try {
+      final response = await supabase
+          .from('user_guidance_profiles')
+          .select('firstname, lastname, profile_image_url, college_handled')
+          .eq('user_id', widget.userId)
+          .single();
 
-    if (response.status == 200 && response.data != null) {
-      setState(() {
-        profileData = response.data;
-      });
-    } else {
-      print("Error fetching profile data. Status: ${response.status}");
+      if (response != null) {
+        setState(() {
+          profileData = response;
+        });
+      } else {
+        print("Error fetching profile data: response is null");
+      }
+    } catch (e) {
+      print("Error fetching profile data: $e");
     }
   }
 
@@ -97,53 +102,56 @@ class _HomeState extends State<Home> {
     final startOfMonth = DateTime(selectedDate.year, selectedDate.month, 1);
     final endOfMonth = DateTime(selectedDate.year, selectedDate.month + 1, 0);
 
-    final response = await supabase
-        .from('emotionresponse')
-        .select('created_at, emotions') // Fetch all emotions
-        .gte('created_at', startOfMonth.toIso8601String())
-        .lte('created_at', endOfMonth.toIso8601String())
-        .order('created_at', ascending: true)
-        .execute();
+    try {
+      final response = await supabase
+          .from('emotionresponse')
+          .select('created_at, emotions')
+          .gte('created_at', startOfMonth.toIso8601String())
+          .lte('created_at', endOfMonth.toIso8601String())
+          .order('created_at', ascending: true);
 
-    if (response.status == 200 && response.data != null) {
-      final data = response.data;
+      if (response != null) {
+        final data = response as List<dynamic>;
 
-      Map<int, String> dailyDominantEmotion = {};
-      Map<int, Map<String, int>> dailyEmotionCounts = {};
+        Map<int, String> dailyDominantEmotion = {};
+        Map<int, Map<String, int>> dailyEmotionCounts = {};
 
-      for (var entry in data) {
-        final timestamp = DateTime.parse(entry['created_at']);
-        final dayOfMonth = timestamp.day;
-        final emotion = entry['emotions'] as String;
+        for (var entry in data) {
+          final timestamp = DateTime.parse(entry['created_at']);
+          final dayOfMonth = timestamp.day;
+          final emotion = entry['emotions'] as String;
 
-        dailyEmotionCounts.putIfAbsent(dayOfMonth, () => {});
-        dailyEmotionCounts[dayOfMonth]![emotion] =
-            (dailyEmotionCounts[dayOfMonth]![emotion] ?? 0) + 1;
-      }
+          dailyEmotionCounts.putIfAbsent(dayOfMonth, () => {});
+          dailyEmotionCounts[dayOfMonth]![emotion] =
+              (dailyEmotionCounts[dayOfMonth]![emotion] ?? 0) + 1;
+        }
 
-      dailyEmotionCounts.forEach((day, emotions) {
-        String dominantEmotion = '';
-        int maxCount = 0;
+        dailyEmotionCounts.forEach((day, emotions) {
+          String dominantEmotion = '';
+          int maxCount = 0;
 
-        emotions.forEach((emotion, count) {
-          if (count > maxCount) {
-            maxCount = count;
-            dominantEmotion = emotion;
-          }
+          emotions.forEach((emotion, count) {
+            if (count > maxCount) {
+              maxCount = count;
+              dominantEmotion = emotion;
+            }
+          });
+
+          dailyDominantEmotion[day] = dominantEmotion;
         });
 
-        dailyDominantEmotion[day] = dominantEmotion;
-      });
-
-      setState(() {
-        emotionDataPoints = dailyDominantEmotion.entries.map<FlSpot>((entry) {
-          final day = entry.key.toDouble();
-          final yValue = emotionMap[entry.value] ?? 0.0;
-          return FlSpot(day, yValue);
-        }).toList();
-      });
-    } else {
-      print("Error fetching emotion data. Status: ${response.status}");
+        setState(() {
+          emotionDataPoints = dailyDominantEmotion.entries.map<FlSpot>((entry) {
+            final day = entry.key.toDouble();
+            final yValue = emotionMap[entry.value] ?? 0.0;
+            return FlSpot(day, yValue);
+          }).toList();
+        });
+      } else {
+        print("Error fetching emotion data: response is null");
+      }
+    } catch (e) {
+      print("Error fetching emotion data: $e");
     }
   }
 
@@ -151,35 +159,38 @@ class _HomeState extends State<Home> {
     final startOfMonth = DateTime(selectedDate.year, selectedDate.month, 1);
     final endOfMonth = DateTime(selectedDate.year, selectedDate.month + 1, 0);
 
-    final response = await supabase
-        .from('stress')
-        .select('timestamp, stress_scale') // Fetch stress data for all students
-        .gte('timestamp', startOfMonth.toIso8601String())
-        .lte('timestamp', endOfMonth.toIso8601String())
-        .order('timestamp', ascending: true)
-        .execute();
+    try {
+      final response = await supabase
+          .from('stress')
+          .select('timestamp, stress_scale')
+          .gte('timestamp', startOfMonth.toIso8601String())
+          .lte('timestamp', endOfMonth.toIso8601String())
+          .order('timestamp', ascending: true);
 
-    if (response.status == 200 && response.data != null) {
-      final data = response.data;
+      if (response != null) {
+        final data = response as List<dynamic>;
 
-      Map<int, int> dailyDominantStress = {};
-      for (var entry in data) {
-        final timestamp = DateTime.parse(entry['timestamp']);
-        final dayOfMonth = timestamp.day;
-        final stressScale = entry['stress_scale'] as int;
+        Map<int, int> dailyDominantStress = {};
+        for (var entry in data) {
+          final timestamp = DateTime.parse(entry['timestamp']);
+          final dayOfMonth = timestamp.day;
+          final stressScale = entry['stress_scale'] as int;
 
-        dailyDominantStress[dayOfMonth] = stressScale;
+          dailyDominantStress[dayOfMonth] = stressScale;
+        }
+
+        setState(() {
+          sudsDataPoints = dailyDominantStress.entries.map<FlSpot>((entry) {
+            final day = entry.key.toDouble();
+            final stressValue = entry.value.toDouble();
+            return FlSpot(day, stressValue);
+          }).toList();
+        });
+      } else {
+        print("Error fetching SUDS data: response is null");
       }
-
-      setState(() {
-        sudsDataPoints = dailyDominantStress.entries.map<FlSpot>((entry) {
-          final day = entry.key.toDouble();
-          final stressValue = entry.value.toDouble();
-          return FlSpot(day, stressValue);
-        }).toList();
-      });
-    } else {
-      print("Error fetching SUDS data. Status: ${response.status}");
+    } catch (e) {
+      print("Error fetching SUDS data: $e");
     }
   }
 
@@ -362,7 +373,7 @@ class _HomeState extends State<Home> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => Messages(userId: widget.userId),
+                    builder: (context) => GuidanceCounselorListPage(),
                   ),
                 );
               },
@@ -440,13 +451,13 @@ class _HomeState extends State<Home> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 IconButton(
-                  icon: Image.asset('assets/menu.png', width: 30, height: 30),
+                  icon: Image.asset('assets/menu.png', width: 80, height: 21),
                   onPressed: () => _scaffoldKey.currentState!.openDrawer(),
                 ),
                 SizedBox(width: 10),
                 Image.asset(
                   'assets/coco1.png',
-                  width: 150,
+                  width: 140,
                   height: 50,
                 ),
               ],
@@ -461,10 +472,10 @@ class _HomeState extends State<Home> {
                   child: Padding(
                     padding: EdgeInsets.only(top: 0, left: 120),
                     child: Text(
-                      "Home",
+                      "HOME",
                       style: TextStyle(
                         fontSize: 24,
-                        color: Color(0xFF00848B),
+                        color: Color(0xFF00B2B0),
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -473,14 +484,37 @@ class _HomeState extends State<Home> {
               ],
             ),
             SizedBox(height: 20),
-            GestureDetector(
-              onTap: () => _selectDate(context),
-              child: Text(
-                formattedDate,
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF00848B),
+            MouseRegion(
+              onEnter: (_) {
+                setState(() {
+                  isHovered = true;
+                });
+              },
+              onExit: (_) {
+                setState(() {
+                  isHovered = false;
+                });
+              },
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                onTap: () => _selectDate(context),
+                child: Column(
+                  children: [
+                    Text(
+                      formattedDate,
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF00848B),
+                      ),
+                    ),
+                    AnimatedContainer(
+                      duration: Duration(milliseconds: 300),
+                      height: isHovered ? 4 : 0,
+                      width: isHovered ? 100 : 0,
+                      color: Color(0xFF00848B),
+                    ),
+                  ],
                 ),
               ),
             ),

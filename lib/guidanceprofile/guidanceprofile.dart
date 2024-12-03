@@ -5,6 +5,7 @@ import 'package:guidance/messages.dart';
 import 'package:guidance/notification.dart';
 import 'package:guidance/consultation.dart';
 import 'package:guidance/summaryreports.dart';
+import '../chat/chat/pages/guidancelist.dart';
 import 'editprofile.dart'; // Import the EditProfile screen
 import 'package:guidance/home.dart';
 import 'package:guidance/login.dart';
@@ -50,19 +51,22 @@ class _GuidanceProfileState extends State<GuidanceProfile> {
   }
 
   Future<void> fetchProfileData() async {
-    final response = await supabase
-        .from('user_guidance_profiles')
-        .select('firstname, lastname, profile_image_url, college_handled')
-        .eq('user_id', widget.userId)
-        .single()
-        .execute();
+    try {
+      final response = await supabase
+          .from('user_guidance_profiles')
+          .select('firstname, lastname, profile_image_url, college_handled')
+          .eq('user_id', widget.userId)
+          .single();
 
-    if (response.status == 200 && response.data != null) {
-      setState(() {
-        profileData = response.data;
-      });
-    } else {
-      print("Error fetching profile data. Status: ${response.status}");
+      if (response != null) {
+        setState(() {
+          profileData = response;
+        });
+      } else {
+        print("Error: Profile data not found.");
+      }
+    } catch (e) {
+      print("Error fetching profile data: $e");
     }
   }
 
@@ -174,7 +178,8 @@ class _GuidanceProfileState extends State<GuidanceProfile> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                      builder: (context) => Messages(userId: widget.userId)),
+                    builder: (context) => GuidanceCounselorListPage(),
+                  ),
                 );
               },
             ),
@@ -260,8 +265,8 @@ class _GuidanceProfileState extends State<GuidanceProfile> {
                               IconButton(
                                 icon: Image.asset(
                                   'assets/menu.png',
-                                  width: 30,
-                                  height: 30,
+                                  width: 80,
+                                  height: 21,
                                   fit: BoxFit.contain,
                                 ),
                                 onPressed: () {
@@ -271,7 +276,7 @@ class _GuidanceProfileState extends State<GuidanceProfile> {
                               SizedBox(width: 10),
                               Image.asset(
                                 'assets/coco1.png',
-                                width: 150,
+                                width: 140,
                                 height: 50,
                                 fit: BoxFit.contain,
                               ),
@@ -279,7 +284,7 @@ class _GuidanceProfileState extends State<GuidanceProfile> {
                           );
                         },
                       ),
-                      SizedBox(height: 20),
+                      SizedBox(height: 60),
                       Container(
                         width: 800,
                         padding: const EdgeInsets.all(
@@ -287,24 +292,16 @@ class _GuidanceProfileState extends State<GuidanceProfile> {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(20.0),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.grey.withOpacity(0.2),
-                              spreadRadius: 3,
-                              blurRadius: 5,
-                              offset: Offset(0, 3),
-                            ),
-                          ],
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Guidance Profile',
+                              'GUIDANCE PROFILE',
                               style: TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF00848B),
+                                color: Color(0xFF00B2B0),
                               ),
                             ),
                             SizedBox(height: 20),

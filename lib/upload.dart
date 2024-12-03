@@ -69,16 +69,12 @@ class _UploadState extends State<Upload> {
             'artist': 'Unknown Artist',
             'genre': selectedGenre.toLowerCase(),
             'file_url': fileUrl,
-          }).execute();
+          });
 
           // Check for Errors in the Insert Response
-          if (insertResponse.status != 201) {
-            // 201 means "Created" in HTTP
-            // Handle error
-            print('Error: ${insertResponse.data}');
-          } else {
-            // Success logic
-            print('Insert successful');
+          if (insertResponse.error != null) {
+            throw Exception(
+                'Failed to insert file metadata: ${insertResponse.error!.message}');
           }
 
           // Show Success Message

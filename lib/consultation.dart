@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'chat/chat/pages/guidancelist.dart';
 import 'studentlist.dart';
 import 'messages.dart';
 import 'notification.dart';
@@ -55,16 +56,12 @@ class _ConsultationState extends State<Consultation> {
           .from('user_guidance_profiles')
           .select('guidance_id')
           .eq('user_id', widget.userId)
-          .single()
-          .execute();
+          .single();
 
-      if (response.data != null) {
+      if (response != null) {
         setState(() {
-          guidanceId = response.data['guidance_id'];
+          guidanceId = response['guidance_id'];
         });
-        print('Fetched guidanceId: $guidanceId');
-      } else {
-        print('Error: guidanceId not found for user_id: ${widget.userId}');
       }
     } catch (e) {
       print('Error fetching guidanceId: $e');
@@ -77,12 +74,11 @@ class _ConsultationState extends State<Consultation> {
           .from('user_guidance_profiles')
           .select('firstname, lastname, profile_image_url')
           .eq('user_id', widget.userId)
-          .single()
-          .execute();
+          .single();
 
-      if (response.status == 200 && response.data != null) {
+      if (response != null) {
         setState(() {
-          profileData = response.data;
+          profileData = response;
         });
       }
     } catch (e) {
@@ -104,48 +100,58 @@ class _ConsultationState extends State<Consultation> {
   }
 
   Future<void> fetchConsultationRequests() async {
-    if (guidanceId == null) {
-      print('guidanceId is null. Skipping fetchConsultationRequests.');
+    if (guidanceId == null || guidanceId!.isEmpty) {
+      print('guidanceId is null or empty. Skipping fetchConsultationRequests.');
       return;
     }
+
     try {
       final response = await supabase
           .from('consultation_request')
           .select(
               'id, description, student_id, student:student_id (firstname, lastname)')
-          .eq('guidance_id', guidanceId)
-          .eq('status', 'Pending')
-          .execute();
+          .eq('guidance_id',
+              guidanceId!) // Use guidanceId! to assert non-null value
+          .eq('status', 'Pending');
 
-      print('Consultation Requests Response: ${response.data}');
-      if (response.data != null) {
+      if (response != null && response is List<dynamic>) {
         setState(() {
-          consultationRequests = List<Map<String, dynamic>>.from(response.data);
+          consultationRequests = List<Map<String, dynamic>>.from(
+              response); // Cast the response properly
         });
+      } else {
+        print('Error: Invalid response format or empty data.');
       }
     } catch (e) {
-      print('Error fetching consultation requests: $e');
+      print('Exception fetching consultation requests: $e');
     }
   }
 
   Future<void> fetchScheduledConsultations() async {
+    if (guidanceId == null || guidanceId!.isEmpty) {
+      print(
+          'guidanceId is null or empty. Skipping fetchScheduledConsultations.');
+      return;
+    }
+
     try {
       final response = await supabase
           .from('session')
           .select(
               'id, schedule, sessiontype, location, consultation_status, student:student_id (firstname, lastname)')
-          .eq('guidance_id', guidanceId) // Use the fetched guidance_id
-          .execute();
+          .eq('guidance_id',
+              guidanceId!); // Use guidanceId! to assert non-null value
 
-      if (response.data != null) {
+      if (response != null && response is List<dynamic>) {
         setState(() {
-          scheduledConsultations =
-              List<Map<String, dynamic>>.from(response.data);
+          scheduledConsultations = List<Map<String, dynamic>>.from(
+              response); // Properly cast the response
         });
+      } else {
+        print('Error: Invalid response format or empty data.');
       }
-      print('Scheduled Consultations Response: ${response.data}');
     } catch (e) {
-      print('Error fetching scheduled consultations: $e');
+      print('Exception fetching scheduled consultations: $e');
     }
   }
 
@@ -250,15 +256,11 @@ class _ConsultationState extends State<Consultation> {
     );
 
     try {
-      await supabase
-          .from('session')
-          .update({
-            'schedule': schedule.toIso8601String(),
-            'sessiontype': sessionType,
-            'location': location,
-          })
-          .eq('id', scheduledConsultations[index]['id'])
-          .execute();
+      await supabase.from('session').update({
+        'schedule': schedule.toIso8601String(),
+        'sessiontype': sessionType,
+        'location': location,
+      }).eq('id', scheduledConsultations[index]['id']);
 
       fetchScheduledConsultations();
     } catch (e) {
@@ -372,7 +374,10 @@ class _ConsultationState extends State<Consultation> {
         print('Error: student_id is null.');
         return;
       }
-      print('Student ID to insert: $studentId'); // Debugging
+
+      // Combine firstname and lastname for the professional_name
+      final professionalName =
+          '${profileData?['firstname'] ?? ''} ${profileData?['lastname'] ?? ''}';
 
       // Insert into session table
       await supabase.from('session').insert({
@@ -382,14 +387,12 @@ class _ConsultationState extends State<Consultation> {
         'sessiontype': sessionType,
         'location': location,
         'consultation_status': 'Pending',
+        'professional_name': professionalName, // Save professional name here
       });
 
       // Update consultation_request table
-      await supabase
-          .from('consultation_request')
-          .update({'status': 'Approved'})
-          .eq('id', consultationRequests[index]['id'])
-          .execute();
+      await supabase.from('consultation_request').update(
+          {'status': 'Approved'}).eq('id', consultationRequests[index]['id']);
 
       fetchConsultationRequests();
       fetchScheduledConsultations();
@@ -472,11 +475,14 @@ class _ConsultationState extends State<Consultation> {
           _buildDrawerItem(
             icon: Icons.message,
             title: 'Messages',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (context) => Messages(userId: widget.userId)),
-            ),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => GuidanceCounselorListPage(),
+                ),
+              );
+            },
           ),
           _buildDrawerItem(
             icon: Icons.notifications,
@@ -546,18 +552,37 @@ class _ConsultationState extends State<Consultation> {
             Row(
               children: [
                 IconButton(
-                  icon: Image.asset('assets/menu.png', width: 30, height: 30),
+                  icon: Image.asset('assets/menu.png', width: 80, height: 21),
                   onPressed: () => _scaffoldKey.currentState!.openDrawer(),
                 ),
-                SizedBox(width: 1),
-                Image.asset('assets/coco1.png', width: 200, height: 70),
+                SizedBox(width: 10),
+                Image.asset('assets/coco1.png', width: 140, height: 50),
+              ],
+            ),
+            SizedBox(
+              height: 5,
+            ),
+            Stack(
+              children: [
+                Align(
+                  alignment: Alignment.topLeft,
+                  child: Padding(
+                    padding: EdgeInsets.only(top: 0, left: 120),
+                    child: Text(
+                      "",
+                      style: TextStyle(
+                        fontSize: 24,
+                        color: Color(0xFF00848B),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
             Expanded(
               child: Row(
                 children: [
-                  // Consultation Requests Section
-// Consultation Requests Section
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
@@ -569,7 +594,7 @@ class _ConsultationState extends State<Consultation> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Consultation Requests',
+                            'CONSULTATION REQUEST',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
@@ -620,7 +645,6 @@ class _ConsultationState extends State<Consultation> {
                     ),
                   ),
                   SizedBox(width: 16),
-// My Schedule Section
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
@@ -632,7 +656,7 @@ class _ConsultationState extends State<Consultation> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'My Schedule',
+                            'MY SCHEDULE',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,

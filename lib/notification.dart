@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:guidance/chat/chat/pages/guidancelist.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'studentlist.dart';
 import 'guidanceprofile/guidanceprofile.dart';
@@ -8,6 +9,7 @@ import 'summaryreports.dart';
 import 'home.dart';
 import 'login.dart';
 import 'upload.dart';
+import 'studentprofile.dart';
 
 class NotificationPage extends StatefulWidget {
   final String userId;
@@ -26,6 +28,9 @@ class _NotificationPageState extends State<NotificationPage> {
   Map<String, dynamic>? profileData;
   List<Map<String, dynamic>> highStressNotifications = [];
   String? userEmail;
+  List<dynamic> students = [];
+  bool isLoading = true;
+  String? errorMessage;
 
   @override
   void initState() {
@@ -34,32 +39,65 @@ class _NotificationPageState extends State<NotificationPage> {
     fetchHighStressNotifications();
     fetchProfileData();
     _fetchUserEmail();
+    fetchStudentData(); // Fetch the data when the page loads
   }
 
   Future<void> fetchConsultationRequests() async {
     try {
-      // Ensure you filter by the guidance counselor's userId
-      final response = await supabase
-          .from('session')
-          .select(
-              'id, schedule, sessiontype, student:student_id (firstname, lastname)')
-          .eq(
-              'guidance_id',
-              widget
-                  .userId) // Fetch only sessions related to this guidance counselor
-          .is_('schedule', null) // Optional: Only fetch unscheduled requests
-          .order('id', ascending: false) // Sort by latest requests
-          .execute();
+      // Fetch the `guidance_id` for the logged-in user
+      final guidanceResponse = await supabase
+          .from('user_guidance_profiles')
+          .select('guidance_id')
+          .eq('user_id', widget.userId)
+          .single();
 
-      if (response.status == 200 && response.data != null) {
+      if (guidanceResponse == null) {
+        print("Error fetching guidance_id");
+        return;
+      }
+
+      final String guidanceId = guidanceResponse['guidance_id'];
+
+      // Fetch consultation requests for the fetched `guidance_id`
+      final response = await supabase
+          .from('consultation_request')
+          .select(
+              'id, description, student:student_id (firstname, lastname), status')
+          .eq('guidance_id', guidanceId)
+          .eq('status', 'Pending')
+          .order('created_at', ascending: false);
+
+      if (response != null) {
         setState(() {
-          consultationRequests = List<Map<String, dynamic>>.from(response.data);
+          consultationRequests =
+              List<Map<String, dynamic>>.from(response as List);
         });
-      } else {
-        print("Error fetching consultation requests: ${response.status}");
       }
     } catch (error) {
       print("Exception fetching consultation requests: $error");
+    }
+  }
+
+  Future<void> fetchStudentData() async {
+    try {
+      final response = await supabase.rpc('get_student_list_with_email');
+
+      if (response.isNotEmpty) {
+        setState(() {
+          students = response as List<dynamic>;
+          isLoading = false;
+        });
+      } else {
+        setState(() {
+          errorMessage = 'Error: No data returned from RPC';
+          isLoading = false;
+        });
+      }
+    } catch (error) {
+      setState(() {
+        errorMessage = 'Error: $error';
+        isLoading = false;
+      });
     }
   }
 
@@ -69,15 +107,12 @@ class _NotificationPageState extends State<NotificationPage> {
           .from('user_guidance_profiles')
           .select('firstname, lastname, profile_image_url, college_handled')
           .eq('user_id', widget.userId)
-          .single()
-          .execute();
+          .single();
 
-      if (response.status == 200) {
+      if (response != null) {
         setState(() {
-          profileData = response.data;
+          profileData = response;
         });
-      } else {
-        print("Error fetching profile data: ${response.status}");
       }
     } catch (error) {
       print("Exception fetching profile data: $error");
@@ -90,17 +125,14 @@ class _NotificationPageState extends State<NotificationPage> {
           .from('stress')
           .select(
               'stress_scale, timestamp, student_id, student:student_id (firstname, lastname)')
-          .in_('stress_scale', [80, 90, 100])
-          .order('timestamp', ascending: false) // Sort by latest stress levels
-          .execute();
+          .or('stress_scale.eq.80,stress_scale.eq.90,stress_scale.eq.100') // Replaces `.inArray`
+          .order('timestamp', ascending: false);
 
-      if (response.status == 200 && response.data != null) {
+      if (response != null) {
         setState(() {
           highStressNotifications =
-              List<Map<String, dynamic>>.from(response.data);
+              List<Map<String, dynamic>>.from(response as List);
         });
-      } else {
-        print("Error fetching stress notifications: ${response.status}");
       }
     } catch (error) {
       print("Exception fetching stress notifications: $error");
@@ -126,26 +158,19 @@ class _NotificationPageState extends State<NotificationPage> {
         '${student['firstname'] ?? 'Unknown'} ${student['lastname'] ?? ''}';
 
     return Container(
-      margin: EdgeInsets.only(bottom: 10),
-      padding: EdgeInsets.all(10),
+      margin: EdgeInsets.symmetric(vertical: 5), // Adjusted margin
+      padding: EdgeInsets.all(8), // Adjusted padding
       decoration: BoxDecoration(
         color: Color(0xFF00B2B0),
-        borderRadius: BorderRadius.circular(25),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            offset: Offset(4, 4),
-            blurRadius: 4,
-          ),
-        ],
+        borderRadius: BorderRadius.circular(12), // Adjusted for smaller corners
       ),
       child: Row(
         children: [
           CircleAvatar(
             backgroundImage: AssetImage('assets/profile.png'),
-            radius: 30,
+            radius: 25, // Smaller radius
           ),
-          SizedBox(width: 16),
+          SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -154,30 +179,25 @@ class _NotificationPageState extends State<NotificationPage> {
                   'Consultation Request from $studentName',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 16,
+                    fontSize: 14, // Smaller font size
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                SizedBox(height: 8),
+                SizedBox(height: 6), // Adjusted spacing
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     TextButton(
                       onPressed: () {
-                        print('Accept pressed for $studentName');
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                Consultation(userId: widget.userId),
+                          ),
+                        );
                       },
                       child: Text('Accept'),
-                      style: TextButton.styleFrom(
-                        backgroundColor: Color(0xFFCBE2BB),
-                        foregroundColor: Colors.black,
-                      ),
-                    ),
-                    SizedBox(width: 10),
-                    TextButton(
-                      onPressed: () {
-                        print('Reject pressed for $studentName');
-                      },
-                      child: Text('Reject'),
                       style: TextButton.styleFrom(
                         backgroundColor: Color(0xFFCBE2BB),
                         foregroundColor: Colors.black,
@@ -200,26 +220,19 @@ class _NotificationPageState extends State<NotificationPage> {
     final stressScale = notification['stress_scale'];
 
     return Container(
-      margin: EdgeInsets.only(bottom: 10),
-      padding: EdgeInsets.all(10),
+      margin: EdgeInsets.symmetric(vertical: 5), // Adjusted margin
+      padding: EdgeInsets.all(8), // Adjusted padding
       decoration: BoxDecoration(
         color: Color(0xFF00B2B0),
-        borderRadius: BorderRadius.circular(25),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            offset: Offset(4, 4),
-            blurRadius: 4,
-          ),
-        ],
+        borderRadius: BorderRadius.circular(12), // Adjusted for smaller corners
       ),
       child: Row(
         children: [
           CircleAvatar(
             backgroundImage: AssetImage('assets/profile.png'),
-            radius: 30,
+            radius: 25, // Smaller radius
           ),
-          SizedBox(width: 16),
+          SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -228,17 +241,30 @@ class _NotificationPageState extends State<NotificationPage> {
                   '$studentName\'s Stress Level Reached $stressScale',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 16,
+                    fontSize: 14, // Smaller font size
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                SizedBox(height: 8),
+                SizedBox(height: 6), // Adjusted spacing
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     TextButton(
                       onPressed: () {
-                        print('View Profile for $studentName');
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => Studentprofile(
+                              email: widget.userId,
+                              studentEmail: student['email'] ?? 'N/A',
+                              studentId: student['id'], // Student ID
+                              firstname: student['firstname'] ?? 'Unknown',
+                              lastname: student['lastname'] ?? '',
+                              college: student['college'] ?? 'Not Available',
+                              yearLevel: student['year_level'] ?? 'Unknown',
+                            ),
+                          ),
+                        );
                       },
                       child: Text('View Profile'),
                       style: TextButton.styleFrom(
@@ -249,7 +275,12 @@ class _NotificationPageState extends State<NotificationPage> {
                     SizedBox(width: 10),
                     TextButton(
                       onPressed: () {
-                        print('Message pressed for $studentName');
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => GuidanceCounselorListPage(),
+                          ),
+                        );
                       },
                       child: Text('Message'),
                       style: TextButton.styleFrom(
@@ -363,7 +394,7 @@ class _NotificationPageState extends State<NotificationPage> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => Messages(userId: widget.userId),
+                    builder: (context) => GuidanceCounselorListPage(),
                   ),
                 );
               },
@@ -431,20 +462,50 @@ class _NotificationPageState extends State<NotificationPage> {
         child: Column(
           children: [
             Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 IconButton(
-                  icon: Image.asset('assets/menu.png', width: 30, height: 30),
+                  icon: Image.asset('assets/menu.png', width: 80, height: 21),
                   onPressed: () => _scaffoldKey.currentState!.openDrawer(),
                 ),
-                SizedBox(width: 1),
-                Image.asset('assets/coco1.png', width: 200, height: 70),
+                SizedBox(width: 10),
+                Image.asset(
+                  'assets/coco1.png',
+                  width: 140,
+                  height: 50,
+                ),
               ],
+            ),
+            SizedBox(
+              height: 20,
+            ),
+            Stack(
+              children: [
+                Align(
+                  alignment: Alignment.topLeft,
+                  child: Padding(
+                    padding: EdgeInsets.only(top: 0, left: 120),
+                    child: Text(
+                      "NOTIFICATION",
+                      style: TextStyle(
+                        fontSize: 24,
+                        color: Color(0xFF00B2B0),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(
+              height: 20, // Adjust the height as needed
             ),
             Expanded(
               child: SingleChildScrollView(
                 child: Container(
                   width: 800,
-                  padding: EdgeInsets.all(16.0),
+                  padding: EdgeInsets.all(25.0),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(12.0),

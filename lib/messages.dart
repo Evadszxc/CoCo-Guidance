@@ -1,26 +1,62 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'chat/call/callpage.dart';
+import 'chat/call/constant.dart';
 import 'studentlist.dart';
-import 'package:guidance/guidanceprofile/guidanceprofile.dart';
+import 'guidanceprofile/guidanceprofile.dart';
 import 'notification.dart';
 import 'consultation.dart';
 import 'summaryreports.dart';
 import 'home.dart';
+import 'login.dart';
+import 'dart:html' as html;
 
 class Messages extends StatefulWidget {
-  final String userId; // Accept the logged-in user's ID
+  final String userId;
 
-  Messages({required this.userId}); // Constructor to accept userId
+  Messages({required this.userId});
 
   @override
   _MessagesState createState() => _MessagesState();
 }
 
 class _MessagesState extends State<Messages> {
+  final SupabaseClient supabase = Supabase.instance.client;
   final TextEditingController _messageController = TextEditingController();
+
+  Map<String, dynamic>? profileData;
+  String? userEmail;
   List<Map<String, String>> chatMessages = [
     {"sender": "Adrian Mark Cinchez", "message": "Hi", "isMe": "false"},
     {"sender": "You", "message": "Hello", "isMe": "true"},
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchProfileData();
+  }
+
+  Future<void> _fetchProfileData() async {
+    try {
+      final response = await supabase
+          .from('user_guidance_profiles')
+          .select('firstname, lastname, profile_image_url')
+          .eq('user_id', widget.userId)
+          .single();
+
+      if (response != null) {
+        setState(() {
+          profileData = response;
+          userEmail = supabase.auth.currentUser?.email;
+        });
+      } else {
+        print("Error fetching profile data: No data found.");
+      }
+    } catch (e) {
+      print("Error fetching profile data: $e");
+    }
+  }
 
   void _sendMessage() {
     if (_messageController.text.trim().isNotEmpty) {
@@ -35,94 +71,42 @@ class _MessagesState extends State<Messages> {
     }
   }
 
+  void _startCall(bool isVideoCall) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Center(child: CircularProgressIndicator()),
+    );
+
+    Future.delayed(Duration(seconds: 2), () {
+      Navigator.pop(context); // Remove loading dialog
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CallPage(
+            userID: widget.userId,
+            userName: profileData?['firstname'] ?? "Unknown User",
+            callID:
+                "call_${widget.userId}_${DateTime.now().millisecondsSinceEpoch}",
+            isVideoCall: isVideoCall,
+          ),
+        ),
+      );
+    });
+  }
+
   Widget _buildDrawerItem({
     required IconData icon,
     required String title,
     required VoidCallback onTap,
   }) {
     return ListTile(
-      leading: Icon(
-        icon,
-        color: Color(0xFF00848B),
-      ),
+      leading: Icon(icon, color: Color(0xFF00848B)),
       title: Text(
         title,
-        style: TextStyle(
-          color: Color(0xFF00848B),
-        ),
+        style: TextStyle(color: Color(0xFF00848B)),
       ),
       onTap: onTap,
-    );
-  }
-
-  Widget _buildChatBubble({
-    required String sender,
-    required String message,
-    required bool isMe,
-  }) {
-    return Row(
-      mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-      children: [
-        if (!isMe)
-          CircleAvatar(
-            backgroundImage: AssetImage('assets/profile.png'),
-          ),
-        Container(
-          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          margin: EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: isMe ? Color(0xFF00B2B0) : Colors.grey[300],
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Text(
-            message,
-            style: TextStyle(
-              color: isMe ? Colors.white : Colors.black,
-            ),
-          ),
-        ),
-        if (isMe)
-          CircleAvatar(
-            backgroundImage: AssetImage('assets/profile.png'),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildStudentItem(String name, String year, String stressScale) {
-    return Container(
-      padding: EdgeInsets.symmetric(vertical: 10, horizontal: 10),
-      margin: EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: Color(0xFF00B2B0),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            backgroundImage: AssetImage('assets/profile.png'),
-          ),
-          SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                name,
-                style:
-                    TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-              ),
-              Text(
-                year,
-                style: TextStyle(color: Colors.white),
-              ),
-              Text(
-                'STRESS SCALE: $stressScale',
-                style: TextStyle(color: Colors.redAccent),
-              ),
-            ],
-          ),
-        ],
-      ),
     );
   }
 
@@ -143,24 +127,22 @@ class _MessagesState extends State<Messages> {
                 children: [
                   CircleAvatar(
                     radius: 40,
-                    backgroundImage: AssetImage('assets/profile.png'),
+                    backgroundImage: profileData?['profile_image_url'] != null
+                        ? NetworkImage(profileData!['profile_image_url'])
+                        : AssetImage('assets/profile.png') as ImageProvider,
                   ),
                   SizedBox(height: 10),
                   Text(
-                    'Nariah Sy',
+                    '${profileData?['firstname'] ?? 'Admin'} ${profileData?['lastname'] ?? ''}',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  SizedBox(height: 5),
                   Text(
-                    'Guidance@uic.edu.ph',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                    ),
+                    userEmail ?? 'Email Not Available',
+                    style: TextStyle(color: Colors.white, fontSize: 14),
                   ),
                 ],
               ),
@@ -177,54 +159,17 @@ class _MessagesState extends State<Messages> {
                 );
               },
             ),
-            _buildDrawerItem(
-              icon: Icons.list,
-              title: 'Student List',
-              onTap: () {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => Studentlist(userId: widget.userId),
-                  ),
-                );
-              },
-            ),
-            _buildDrawerItem(
-              icon: Icons.person,
-              title: 'Profile',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) =>
-                        GuidanceProfile(userId: widget.userId),
-                  ),
-                );
-              },
-            ),
-            _buildDrawerItem(
-              icon: Icons.message,
-              title: 'Messages',
-              onTap: () => Navigator.pop(context),
-            ),
-            _buildDrawerItem(
-              icon: Icons.notifications,
-              title: 'Notification',
-              onTap: () {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) =>
-                        NotificationPage(userId: widget.userId),
-                  ),
-                );
-              },
-            ),
+            // Other drawer items here...
             ListTile(
               leading: Icon(Icons.logout, color: Colors.red),
               title: Text('Sign Out', style: TextStyle(color: Colors.red)),
-              onTap: () {
-                // Add sign-out logic here
+              onTap: () async {
+                await supabase.auth.signOut();
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (context) => LoginPage()),
+                  (route) => false,
+                );
               },
             ),
           ],
@@ -234,121 +179,90 @@ class _MessagesState extends State<Messages> {
         padding: EdgeInsets.all(16.0),
         child: Column(
           children: [
-            Row(
-              children: [
-                IconButton(
-                  icon: Image.asset('assets/menu.png', width: 30, height: 30),
-                  onPressed: () => Scaffold.of(context).openDrawer(),
-                ),
-                SizedBox(width: 1),
-                Image.asset('assets/coco1.png', width: 200, height: 70),
-              ],
+            Builder(
+              builder: (BuildContext context) {
+                return IconButton(
+                  icon: Image.asset(
+                    'assets/menu.png',
+                    width: 30,
+                    height: 30,
+                  ),
+                  onPressed: () {
+                    Scaffold.of(context).openDrawer();
+                  },
+                );
+              },
             ),
             Expanded(
-              child: SingleChildScrollView(
-                child: Center(
-                  child: Container(
-                    width: 800,
-                    padding: EdgeInsets.all(16.0),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12.0),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'MESSAGES',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF00B2B0),
+              child: Center(
+                child: Container(
+                  width: 800,
+                  padding: EdgeInsets.all(16.0),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12.0),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'MESSAGES',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF00B2B0),
+                            ),
                           ),
-                        ),
-                        SizedBox(height: 20),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              flex: 2,
-                              child: Column(
-                                children: [
-                                  _buildStudentItem(
-                                    'Adrian Mark Cinchez',
-                                    'BSIT - 3RD YEAR',
-                                    '90',
-                                  ),
-                                  _buildStudentItem(
-                                    'Jenny Babe Cano',
-                                    'BSIT - 3RD YEAR',
-                                    '60',
-                                  ),
-                                  _buildStudentItem(
-                                    'Dave D. Laburada',
-                                    'BSP - 4TH YEAR',
-                                    '90',
-                                  ),
-                                ],
+                          Row(
+                            children: [
+                              IconButton(
+                                icon: Icon(Icons.video_call,
+                                    color: Color(0xFF00B2B0)),
+                                onPressed: () => _startCall(true),
                               ),
-                            ),
-                            SizedBox(width: 20),
-                            Expanded(
-                              flex: 3,
-                              child: Container(
-                                height: 400,
-                                decoration: BoxDecoration(
-                                  color: Colors.grey[200],
-                                  borderRadius: BorderRadius.circular(12.0),
-                                ),
-                                child: Column(
-                                  children: [
-                                    Expanded(
-                                      child: ListView(
-                                        children: chatMessages.map((chat) {
-                                          return _buildChatBubble(
-                                            sender: chat['sender'] ?? 'Unknown',
-                                            message: chat['message'] ?? '',
-                                            isMe: chat['isMe'] == "true"
-                                                ? true
-                                                : false,
-                                          );
-                                        }).toList(),
-                                      ),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.all(8.0),
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: TextField(
-                                              controller: _messageController,
-                                              decoration: InputDecoration(
-                                                hintText: "Type here...",
-                                                border: OutlineInputBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(30),
-                                                ),
-                                                filled: true,
-                                                fillColor: Colors.white,
-                                              ),
-                                            ),
-                                          ),
-                                          IconButton(
-                                            icon: Icon(Icons.send,
-                                                color: Color(0xFF00B2B0)),
-                                            onPressed: _sendMessage,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
+                              IconButton(
+                                icon:
+                                    Icon(Icons.call, color: Color(0xFF00B2B0)),
+                                onPressed: () => _startCall(false),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: chatMessages.length,
+                          itemBuilder: (context, index) {
+                            final chat = chatMessages[index];
+                            return ListTile(
+                              title: Text(chat['sender'] ?? 'Unknown'),
+                              subtitle: Text(chat['message'] ?? ''),
+                            );
+                          },
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _messageController,
+                              decoration: InputDecoration(
+                                hintText: 'Type a message...',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30),
                                 ),
                               ),
                             ),
-                          ],
-                        ),
-                      ],
-                    ),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.send, color: Color(0xFF00B2B0)),
+                            onPressed: _sendMessage,
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -362,6 +276,7 @@ class _MessagesState extends State<Messages> {
 
 void main() {
   runApp(MaterialApp(
-    home: Messages(userId: 'some_user_id'), // Pass the user ID here
+    home: Messages(userId: 'sample-user-id'),
+    debugShowCheckedModeBanner: false,
   ));
 }

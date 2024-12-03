@@ -3,6 +3,7 @@ import 'package:guidance/login.dart';
 import 'package:guidance/home.dart'; // Import Home page
 import 'supabase.dart'; // Supabase initialization logic
 import 'package:supabase_flutter/supabase_flutter.dart'; // Supabase Flutter SDK
+import 'package:universal_platform/universal_platform.dart'; // Platform checks for web compatibility
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,3 +42,6 @@ class MyApp extends StatelessWidget {
     );
   }
 }
+
+// Platform check for web, mobile, and desktop
+bool isWeb() => UniversalPlatform.isWeb;

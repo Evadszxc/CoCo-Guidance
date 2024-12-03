@@ -1,5 +1,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:guidance/chat/chat/pages/guidancelist.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'guidanceprofile/guidanceprofile.dart';
@@ -77,54 +78,48 @@ class _StudentprofileState extends State<Studentprofile> {
   }
 
   Future<void> fetchProfileData() async {
-    final response = await supabase
-        .from('user_guidance_profiles')
-        .select('firstname, lastname, profile_image_url')
-        .eq('user_id', supabase.auth.currentUser?.id)
-        .single()
-        .execute();
+    try {
+      final userId = supabase.auth.currentUser?.id;
 
-    if (response.status == 200 && response.data != null) {
-      setState(() {
-        profileData = response.data;
-        userEmail = supabase.auth.currentUser?.email;
-      });
-    } else {
-      print("Error fetching profile data: ${response.status}");
+      if (userId == null) {
+        print("Error: User ID is null.");
+        return;
+      }
+
+      final response = await supabase
+          .from('user_guidance_profiles')
+          .select('firstname, lastname, profile_image_url')
+          .eq('user_id', userId)
+          .single();
+
+      if (response != null) {
+        setState(() {
+          profileData = response;
+          userEmail = supabase.auth.currentUser?.email;
+        });
+      } else {
+        print("Error fetching profile data: No data found.");
+      }
+    } catch (error) {
+      print("Error fetching profile data: $error");
     }
   }
 
   Future<void> fetchStudentProfileData() async {
     try {
-      // Fetch student_id from auth.users using email
-      final userIdResponse = await supabase
-          .from('auth.users')
-          .select('id')
-          .eq('email', widget.studentEmail)
-          .single()
-          .execute();
+      // Fetch student profile data using student_id
+      final profileResponse = await supabase
+          .from('user_student_profile')
+          .select('firstname, lastname, year_level')
+          .eq('student_id', widget.studentId)
+          .single();
 
-      if (userIdResponse.status == 200 && userIdResponse.data != null) {
-        String studentId = userIdResponse.data['id'];
-
-        // Fetch student profile data using student_id
-        final profileResponse = await supabase
-            .from('user_student_profile')
-            .select('firstname, lastname, year_level')
-            .eq('student_id', studentId)
-            .single()
-            .execute();
-
-        if (profileResponse.status == 200 && profileResponse.data != null) {
-          setState(() {
-            studentProfileData = profileResponse.data;
-          });
-        } else {
-          print(
-              "Error fetching student profile data: ${profileResponse.status}");
-        }
+      if (profileResponse != null) {
+        setState(() {
+          studentProfileData = profileResponse;
+        });
       } else {
-        print("Error fetching student_id: ${userIdResponse.status}");
+        print("Error fetching student profile data: No data found.");
       }
     } catch (error) {
       print("Error: $error");
@@ -132,20 +127,17 @@ class _StudentprofileState extends State<Studentprofile> {
   }
 
   Future<void> fetchLatestStressScale() async {
-    final response = await supabase
-        .from('stress')
-        .select('stress_scale')
-        .eq('student_id', widget.studentId)
-        .execute();
+    try {
+      final response = await supabase
+          .from('stress')
+          .select('stress_scale')
+          .eq('student_id', widget.studentId);
 
-    if (response.status == 200 && response.data != null) {
-      final stressData = response.data as List<dynamic>;
-
-      if (stressData.isNotEmpty) {
-        double totalStress = stressData.fold<double>(
+      if (response != null && response.isNotEmpty) {
+        double totalStress = response.fold<double>(
             0.0, (sum, item) => sum + (item['stress_scale'] ?? 0.0));
 
-        double stressAverage = totalStress / stressData.length;
+        double stressAverage = totalStress / response.length;
 
         setState(() {
           latestStressScale = stressAverage.toStringAsFixed(2);
@@ -155,11 +147,11 @@ class _StudentprofileState extends State<Studentprofile> {
           latestStressScale = "No Data";
         });
       }
-    } else {
+    } catch (error) {
       setState(() {
         latestStressScale = "Error Fetching";
       });
-      print("Error fetching stress scale: ${response.status}");
+      print("Error fetching stress scale: $error");
     }
   }
 
@@ -173,13 +165,12 @@ class _StudentprofileState extends State<Studentprofile> {
           .select('created_at, emotions')
           .eq('student_id', widget.studentId)
           .gte('created_at', startDate.toIso8601String())
-          .lt('created_at', endDate.toIso8601String())
-          .execute();
+          .lt('created_at', endDate.toIso8601String());
 
-      if (response.status == 200 && response.data != null) {
+      if (response != null) {
         final groupedByDay = <int, Map<String, int>>{};
 
-        for (var record in response.data) {
+        for (var record in response) {
           final createdAt = DateTime.parse(record['created_at']);
           final day = createdAt.day;
           final emotion = record['emotions'] as String;
@@ -197,7 +188,7 @@ class _StudentprofileState extends State<Studentprofile> {
           }).toList();
         });
       } else {
-        print("Error fetching emotion data: ${response.status}");
+        print("Error fetching emotion data: No data found.");
       }
     } catch (error) {
       print("Error: $error");
@@ -214,13 +205,12 @@ class _StudentprofileState extends State<Studentprofile> {
           .select('timestamp, stress_scale')
           .eq('student_id', widget.studentId)
           .gte('timestamp', startDate.toIso8601String())
-          .lt('timestamp', endDate.toIso8601String())
-          .execute();
+          .lt('timestamp', endDate.toIso8601String());
 
-      if (response.status == 200 && response.data != null) {
+      if (response != null) {
         final groupedByDay = <int, Map<int, int>>{};
 
-        for (final item in response.data) {
+        for (final item in response) {
           final date = DateTime.parse(item['timestamp']);
           final day = date.day;
           final stressScale = item['stress_scale'];
@@ -239,7 +229,7 @@ class _StudentprofileState extends State<Studentprofile> {
           }).toList();
         });
       } else {
-        print("Error fetching SUDS data: ${response.status}");
+        print("Error fetching SUDS data: No data found.");
       }
     } catch (error) {
       print("Error: $error");
@@ -408,8 +398,7 @@ class _StudentprofileState extends State<Studentprofile> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) =>
-                          Messages(userId: supabase.auth.currentUser?.id ?? ''),
+                      builder: (context) => GuidanceCounselorListPage(),
                     ),
                   );
                 },
@@ -477,9 +466,8 @@ class _StudentprofileState extends State<Studentprofile> {
                   IconButton(
                     icon: Image.asset(
                       'assets/menu.png',
-                      width: 30,
-                      height: 30,
-                      fit: BoxFit.contain,
+                      width: 80,
+                      height: 21,
                     ),
                     onPressed: () {
                       _scaffoldKey.currentState!.openDrawer();
@@ -488,9 +476,8 @@ class _StudentprofileState extends State<Studentprofile> {
                   SizedBox(width: 1),
                   Image.asset(
                     'assets/coco1.png',
-                    width: 200,
-                    height: 70,
-                    fit: BoxFit.contain,
+                    width: 140,
+                    height: 50,
                   ),
                 ],
               ),

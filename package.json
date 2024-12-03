@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "zego-express-engine-webrtc": "^3.7.4"
+  }
+}

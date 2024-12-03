@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:guidance/chat/chat/pages/guidancelist.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'home.dart';
 import 'studentlist.dart';
@@ -42,44 +43,68 @@ class _SummaryreportsState extends State<Summaryreports> {
     super.initState();
     fetchProfileData();
     fetchCollegeStressData();
+    fetchUserEmail();
+  }
+
+  Future<void> fetchUserEmail() async {
+    try {
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        setState(() {
+          userEmail = user.email; // Update the email
+        });
+      }
+    } catch (e) {
+      print("Error fetching user email: $e");
+    }
   }
 
   Future<void> fetchProfileData() async {
-    final response = await supabase
-        .from('user_guidance_profiles')
-        .select('firstname, lastname, profile_image_url, college_handled')
-        .eq('user_id', widget.userId)
-        .single()
-        .execute();
+    try {
+      final response = await supabase
+          .from('user_guidance_profiles')
+          .select('firstname, lastname, profile_image_url, college_handled')
+          .eq('user_id', widget.userId)
+          .single();
 
-    if (response.status == 200 && response.data != null) {
-      setState(() {
-        profileData = response.data;
-      });
-    } else {
-      print("Error fetching profile data. Status: ${response.status}");
+      if (response != null) {
+        setState(() {
+          profileData = response;
+        });
+      } else {
+        print("Error fetching profile data: No data found.");
+      }
+    } catch (error) {
+      print("Error fetching profile data: $error");
     }
   }
 
   Future<void> fetchCollegeStressData() async {
-    final int minStress = int.parse(selectedType.split('-')[0]);
-    final int maxStress = int.parse(selectedType.split('-')[1]);
-
     try {
+      // Parse the stress range
+      final int minStress = int.parse(selectedType.split('-')[0]);
+      final int maxStress = int.parse(selectedType.split('-')[1]);
+
+      // Query the stress table
       final response = await Supabase.instance.client
           .from('stress')
           .select(
               'student_id, stress_scale, timestamp, student:student_id (college)')
           .gte('stress_scale', minStress)
           .lte('stress_scale', maxStress)
-          .gte('timestamp',
-              DateTime(int.parse(selectedYear), 1, 1).toIso8601String())
-          .lte('timestamp',
-              DateTime(int.parse(selectedYear), 12, 31).toIso8601String())
-          .execute();
+          .gte(
+              'timestamp',
+              DateTime(int.parse(selectedYear), 1, 1)
+                  .toIso8601String()) // Start of the year
+          .lte(
+              'timestamp',
+              DateTime(int.parse(selectedYear), 12, 31)
+                  .toIso8601String()); // End of the year
 
-      if (response.status == 200 && response.data != null) {
-        final List<dynamic> data = response.data;
+      if (response != null) {
+        final List<dynamic> data = response;
+
+        // Process data for monthly and college breakdown
         final Map<String, Map<String, int>> tempData = {};
 
         for (var entry in data) {
@@ -87,8 +112,9 @@ class _SummaryreportsState extends State<Summaryreports> {
           final timestamp = DateTime.parse(entry['timestamp']);
           final month = timestamp.month;
 
-          if (!tempData.containsKey(college)) {
-            tempData[college] = {
+          // Initialize college data if not present
+          tempData.putIfAbsent(college, () {
+            return {
               'Jan': 0,
               'Feb': 0,
               'Mar': 0,
@@ -102,8 +128,9 @@ class _SummaryreportsState extends State<Summaryreports> {
               'Nov': 0,
               'Dec': 0,
             };
-          }
+          });
 
+          // Increment the count for the corresponding month
           final monthKey = [
             'Jan',
             'Feb',
@@ -122,6 +149,7 @@ class _SummaryreportsState extends State<Summaryreports> {
           tempData[college]![monthKey] = tempData[college]![monthKey]! + 1;
         }
 
+        // Update state with the formatted data
         setState(() {
           collegesData = tempData.entries.map((entry) {
             return {
@@ -131,10 +159,7 @@ class _SummaryreportsState extends State<Summaryreports> {
           }).toList();
         });
       } else {
-        print('Error fetching stress data. Status: ${response.status}');
-        if (response.data == null) {
-          print('No data available for the specified criteria.');
-        }
+        print('Error: No data available for the specified criteria.');
       }
     } catch (e) {
       print('Exception while fetching stress data: $e');
@@ -237,11 +262,14 @@ class _SummaryreportsState extends State<Summaryreports> {
           _buildDrawerItem(
             icon: Icons.message,
             title: 'Messages',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (context) => Messages(userId: widget.userId)),
-            ),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => GuidanceCounselorListPage(),
+                ),
+              );
+            },
           ),
           _buildDrawerItem(
             icon: Icons.notifications,
@@ -314,11 +342,11 @@ class _SummaryreportsState extends State<Summaryreports> {
             Row(
               children: [
                 IconButton(
-                  icon: Image.asset('assets/menu.png', width: 30, height: 30),
+                  icon: Image.asset('assets/menu.png', width: 80, height: 21),
                   onPressed: () => _scaffoldKey.currentState!.openDrawer(),
                 ),
-                SizedBox(width: 1),
-                Image.asset('assets/coco1.png', width: 200, height: 70),
+                SizedBox(width: 10),
+                Image.asset('assets/coco1.png', width: 140, height: 50),
               ],
             ),
             SizedBox(height: 20),
