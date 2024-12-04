@@ -10,8 +10,10 @@ import 'consultation.dart';
 import 'summaryreports.dart';
 import 'home.dart';
 import 'studentlist.dart';
+import 'upload.dart';
 
 class Studentprofile extends StatefulWidget {
+  final String userId; // Add this field
   final String email; // Guidance user's email
   final String studentEmail; // Student's email
   final String firstname;
@@ -21,6 +23,7 @@ class Studentprofile extends StatefulWidget {
   final String studentId; // Use student_id instead of email
 
   Studentprofile({
+    required this.userId, // Add this parameter
     required this.email,
     required this.studentEmail,
     required this.studentId,
@@ -315,17 +318,53 @@ class _StudentprofileState extends State<Studentprofile> {
     );
   }
 
+  Widget _buildLegendItem(int value, String description, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3.0),
+      child: Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(5),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              "$value",
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              description,
+              style: const TextStyle(
+                fontSize: 14,
+                color: Colors.black,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
         key: _scaffoldKey,
-        backgroundColor: Color(0xFFF3F8F8),
+        backgroundColor: const Color(0xFFF3F8F8),
         drawer: Drawer(
           child: ListView(
             padding: EdgeInsets.zero,
             children: [
               DrawerHeader(
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   color: Color(0xFF00848B),
                 ),
                 child: Column(
@@ -335,12 +374,13 @@ class _StudentprofileState extends State<Studentprofile> {
                       radius: 40,
                       backgroundImage: profileData?['profile_image_url'] != null
                           ? NetworkImage(profileData!['profile_image_url'])
-                          : AssetImage('assets/profile.png') as ImageProvider,
+                          : const AssetImage('assets/profile.png')
+                              as ImageProvider,
                     ),
-                    SizedBox(height: 5),
+                    const SizedBox(height: 5),
                     Text(
                       '${profileData?['firstname'] ?? 'Admin'} ${profileData?['lastname'] ?? ''}',
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -348,7 +388,7 @@ class _StudentprofileState extends State<Studentprofile> {
                     ),
                     Text(
                       userEmail ?? 'Email Not Available',
-                      style: TextStyle(color: Colors.white, fontSize: 14),
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
                     ),
                   ],
                 ),
@@ -442,6 +482,18 @@ class _StudentprofileState extends State<Studentprofile> {
                   );
                 },
               ),
+              _buildDrawerItem(
+                icon: Icons.upload,
+                title: 'Upload',
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => Upload(userId: widget.userId),
+                    ),
+                  );
+                },
+              ),
               ListTile(
                 leading: Icon(Icons.logout, color: Colors.red),
                 title: Text('Sign Out', style: TextStyle(color: Colors.red)),
@@ -457,243 +509,287 @@ class _StudentprofileState extends State<Studentprofile> {
             ],
           ),
         ),
-        body: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  IconButton(
-                    icon: Image.asset(
-                      'assets/menu.png',
-                      width: 80,
-                      height: 21,
-                    ),
-                    onPressed: () {
-                      _scaffoldKey.currentState!.openDrawer();
-                    },
-                  ),
-                  SizedBox(width: 1),
-                  Image.asset(
-                    'assets/coco1.png',
-                    width: 140,
-                    height: 50,
-                  ),
-                ],
-              ),
-              SizedBox(height: 20),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        CircleAvatar(
-                          radius: 40,
-                          backgroundImage: AssetImage('assets/profile.png'),
-                        ),
-                        SizedBox(height: 10),
-                        Text('Email: ${widget.studentEmail}'),
-                        Text(
-                            'Fullname: ${widget.firstname} ${widget.lastname}'),
-                        Text('College: ${widget.college}'),
-                        Text(
-                            'Year Level: ${widget.yearLevel ?? "Not Available"}'),
-                        Text(
-                          'Stress Average: ${latestStressScale ?? "Not Available"}',
-                          style: TextStyle(
-                            color: latestStressScale != null
-                                ? Colors.red
-                                : Colors.grey,
+        body: SingleChildScrollView(
+            child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Top Bar with Menu and Logo
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: Image.asset(
+                              'assets/menu.png',
+                              width: 80,
+                              height: 21,
+                            ),
+                            onPressed: () {
+                              _scaffoldKey.currentState!.openDrawer();
+                            },
                           ),
-                        ),
-                        SizedBox(height: 10),
-                        ElevatedButton(
-                          onPressed: () {},
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Color(0xFF00848B),
+                          Image.asset(
+                            'assets/coco1.png',
+                            width: 140,
+                            height: 50,
                           ),
-                          child: Text('Message',
-                              style: TextStyle(color: Colors.white)),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    flex: 3,
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            IconButton(
-                              icon: Icon(Icons.arrow_left,
-                                  color: Color(0xFF00848B)),
-                              onPressed: () {
-                                setState(() {
-                                  _selectedDate = DateTime(_selectedDate.year,
-                                      _selectedDate.month - 1);
-                                  fetchEmotionData();
-                                  fetchSudsData();
-                                });
-                              },
-                            ),
-                            Text(
-                              DateFormat('MMMM yyyy').format(_selectedDate),
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF00848B),
+                          const Spacer(),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      // Student Details Section
+                      Center(
+                        child: Container(
+                          constraints: BoxConstraints(
+                            maxWidth: 1100, // Maximum width for responsiveness
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 16.0, horizontal: 12.0),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.grey.withOpacity(0.1),
+                                spreadRadius: 2,
+                                blurRadius: 3,
                               ),
-                            ),
-                            IconButton(
-                              icon: Icon(Icons.arrow_right,
-                                  color: Color(0xFF00848B)),
-                              onPressed: () {
-                                setState(() {
-                                  _selectedDate = DateTime(_selectedDate.year,
-                                      _selectedDate.month + 1);
-                                  fetchEmotionData();
-                                  fetchSudsData();
-                                });
-                              },
-                            ),
-                          ],
-                        ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            ElevatedButton(
-                              onPressed: () {
-                                setState(() {
-                                  isEmotionGraph = true;
-                                });
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: isEmotionGraph
-                                    ? Color(0xFF00A19D)
-                                    : Colors.grey[300],
-                              ),
-                              child: Text(
-                                "Emotion",
-                                style: TextStyle(
-                                  color: isEmotionGraph
-                                      ? Colors.white
-                                      : Color(0xFF00A19D),
-                                ),
-                              ),
-                            ),
-                            SizedBox(width: 10),
-                            ElevatedButton(
-                              onPressed: () {
-                                setState(() {
-                                  isEmotionGraph = false;
-                                });
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: !isEmotionGraph
-                                    ? Color(0xFF00A19D)
-                                    : Colors.grey[300],
-                              ),
-                              child: Text(
-                                "SUDS",
-                                style: TextStyle(
-                                  color: !isEmotionGraph
-                                      ? Colors.white
-                                      : Color(0xFF00A19D),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        SizedBox(
-                          height: 40,
-                          width: 20,
-                        ),
-                        SizedBox(
-                          width: 1200, // Adjust the length (width) of the graph
-                          child: Container(
-                            padding: EdgeInsets.all(10.0),
-                            height: 300, // Adjust the height of the graph
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: BarChart(
-                              BarChartData(
-                                maxY: isEmotionGraph ? 5 : 100,
-                                barGroups: (isEmotionGraph
-                                        ? emotionDataPoints
-                                        : sudsDataPoints)
-                                    .map((spot) {
-                                  return BarChartGroupData(
-                                    x: spot.x.toInt(),
-                                    barRods: [
-                                      BarChartRodData(
-                                        toY: spot.y,
-                                        width: 8,
-                                        color: isEmotionGraph
-                                            ? Colors.blue
-                                            : Colors.green,
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                    ],
-                                  );
-                                }).toList(),
-                                titlesData: FlTitlesData(
-                                  bottomTitles: AxisTitles(
-                                    sideTitles: SideTitles(
-                                      showTitles: true,
-                                      interval: 1,
-                                      getTitlesWidget: (value, _) {
-                                        return Text(value.toInt().toString());
-                                      },
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 40,
+                                    backgroundImage:
+                                        const AssetImage('assets/profile.png'),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text('Email: ${widget.studentEmail}'),
+                                        Text(
+                                            'Fullname: ${widget.firstname} ${widget.lastname}'),
+                                        Text('Course: ${widget.college}'),
+                                        Text(
+                                            'Year Level: ${widget.yearLevel ?? "Not Available"}'),
+                                        Text(
+                                          'Stress Average: ${latestStressScale ?? "Not Available"}',
+                                          style: const TextStyle(
+                                            color: Colors.red,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  leftTitles: AxisTitles(
-                                    sideTitles: SideTitles(
-                                      showTitles: true,
-                                      interval: isEmotionGraph ? 1 : 10,
-                                      getTitlesWidget: (value, _) {
-                                        if (isEmotionGraph) {
-                                          switch (value.toInt()) {
-                                            case 0:
-                                              return Text("😡");
-                                            case 1:
-                                              return Text("😨");
-                                            case 2:
-                                              return Text("😢");
-                                            case 3:
-                                              return Text("😐");
-                                            case 4:
-                                              return Text("🙂");
-                                            case 5:
-                                              return Text("😀");
-                                            default:
-                                              return Text("");
-                                          }
-                                        } else {
-                                          return Text(value.toInt().toString());
-                                        }
-                                      },
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              // Graph Section with Legend
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    flex: 3,
+                                    child: Column(
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            IconButton(
+                                              icon: const Icon(Icons.arrow_left,
+                                                  color: Color(0xFF00848B)),
+                                              onPressed: () {
+                                                setState(() {
+                                                  _selectedDate = DateTime(
+                                                    _selectedDate.year,
+                                                    _selectedDate.month - 1,
+                                                  );
+                                                  fetchEmotionData();
+                                                  fetchSudsData();
+                                                });
+                                              },
+                                            ),
+                                            Text(
+                                              DateFormat('MMMM yyyy')
+                                                  .format(_selectedDate),
+                                              style: const TextStyle(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.bold,
+                                                color: Color(0xFF00848B),
+                                              ),
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(
+                                                  Icons.arrow_right,
+                                                  color: Color(0xFF00848B)),
+                                              onPressed: () {
+                                                setState(() {
+                                                  _selectedDate = DateTime(
+                                                    _selectedDate.year,
+                                                    _selectedDate.month + 1,
+                                                  );
+                                                  fetchEmotionData();
+                                                  fetchSudsData();
+                                                });
+                                              },
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 10),
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            ElevatedButton(
+                                              onPressed: () {
+                                                setState(() {
+                                                  isEmotionGraph = true;
+                                                });
+                                              },
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: isEmotionGraph
+                                                    ? const Color(0xFF00848B)
+                                                    : Colors.grey[300],
+                                              ),
+                                              child: Text(
+                                                'Emotion',
+                                                style: TextStyle(
+                                                  color: isEmotionGraph
+                                                      ? Colors.white
+                                                      : const Color(0xFF00848B),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            ElevatedButton(
+                                              onPressed: () {
+                                                setState(() {
+                                                  isEmotionGraph = false;
+                                                });
+                                              },
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: !isEmotionGraph
+                                                    ? const Color(0xFF00848B)
+                                                    : Colors.grey[300],
+                                              ),
+                                              child: Text(
+                                                'SUDS',
+                                                style: TextStyle(
+                                                  color: !isEmotionGraph
+                                                      ? Colors.white
+                                                      : const Color(0xFF00848B),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 20),
+                                        Container(
+                                          height: 250,
+                                          padding: const EdgeInsets.all(10.0),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.grey
+                                                    .withOpacity(0.1),
+                                                spreadRadius: 2,
+                                                blurRadius: 3,
+                                              ),
+                                            ],
+                                          ),
+                                          child: buildBarGraph(
+                                            dataPoints: isEmotionGraph
+                                                ? emotionDataPoints
+                                                : sudsDataPoints,
+                                            isEmotionGraph: isEmotionGraph,
+                                            maxY: isEmotionGraph ? 5 : 100,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 20),
+                                        Center(
+                                          child: ElevatedButton(
+                                            onPressed: () {
+                                              // Define what happens when Message is pressed
+                                            },
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                                  const Color(0xFF00848B),
+                                            ),
+                                            child: const Text(
+                                              'Message',
+                                              style: TextStyle(
+                                                  color: Colors.white),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                ),
-                                borderData: FlBorderData(show: false),
-                                gridData: FlGridData(show: false),
+                                  const SizedBox(width: 15),
+                                  Expanded(
+                                    flex: 2,
+                                    child: Column(
+                                      children: [
+                                        _buildLegendItem(
+                                            100,
+                                            "Highest distress/fear/anxiety/discomfort that you have ever felt",
+                                            Colors.red),
+                                        _buildLegendItem(
+                                            90,
+                                            "Extremely anxious/distressed",
+                                            Colors.red.shade400),
+                                        _buildLegendItem(
+                                            80,
+                                            "Very anxious/distressed",
+                                            Colors.orange),
+                                        _buildLegendItem(
+                                            70,
+                                            "Quite anxious/distressed, interfering with performance",
+                                            Colors.orangeAccent),
+                                        _buildLegendItem(
+                                            60,
+                                            "Moderate anxiety/distress",
+                                            Colors.yellow),
+                                        _buildLegendItem(
+                                            50,
+                                            "Moderate anxiety/distress",
+                                            Colors.yellow.shade300),
+                                        _buildLegendItem(
+                                            40,
+                                            "Moderate anxiety/distress",
+                                            Colors.greenAccent),
+                                        _buildLegendItem(
+                                            30,
+                                            "Mild anxiety/distress",
+                                            Colors.green),
+                                        _buildLegendItem(
+                                            20,
+                                            "Minimal anxiety/distress",
+                                            Colors.lightGreen),
+                                        _buildLegendItem(
+                                            10, "Alert and awake", Colors.blue),
+                                        _buildLegendItem(
+                                            0, "Totally relaxed", Colors.cyan),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
+                            ],
                           ),
-                        )
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ));
+                        ),
+                      ),
+                    ]))));
   }
 }

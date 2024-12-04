@@ -152,6 +152,40 @@ class _NotificationPageState extends State<NotificationPage> {
     }
   }
 
+  void navigateToStudentProfile(Map<String, dynamic> notification) {
+    print("Notification Data: $notification");
+
+    final student = notification['student'];
+    final studentName =
+        '${student['firstname'] ?? 'Unknown'} ${student['lastname'] ?? ''}';
+    final stressScale = notification['stress_scale'];
+    final studentId = notification['student_id'];
+    final studentEmail = notification.containsKey('student_email')
+        ? notification['student_email']['email']
+        : 'Unknown';
+    final college =
+        student.containsKey('college') ? student['college'] : 'Unknown';
+    final yearLevel = student.containsKey('year_level')
+        ? student['year_level'].toString()
+        : 'Unknown';
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => Studentprofile(
+          userId: widget.userId,
+          email: userEmail ?? '', // Guidance counselor's email
+          studentEmail: studentEmail, // Student's email
+          studentId: studentId, // Student's ID
+          firstname: student['firstname'] ?? 'Unknown', // Student's first name
+          lastname: student['lastname'] ?? 'Unknown', // Student's last name
+          college: college, // Student's college
+          yearLevel: yearLevel, // Student's year level
+        ),
+      ),
+    );
+  }
+
   Widget _buildConsultationRequestCard(Map<String, dynamic> request) {
     final student = request['student'];
     final studentName =
@@ -220,17 +254,17 @@ class _NotificationPageState extends State<NotificationPage> {
     final stressScale = notification['stress_scale'];
 
     return Container(
-      margin: EdgeInsets.symmetric(vertical: 5), // Adjusted margin
-      padding: EdgeInsets.all(8), // Adjusted padding
+      margin: EdgeInsets.symmetric(vertical: 5),
+      padding: EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: Color(0xFF00B2B0),
-        borderRadius: BorderRadius.circular(12), // Adjusted for smaller corners
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
           CircleAvatar(
             backgroundImage: AssetImage('assets/profile.png'),
-            radius: 25, // Smaller radius
+            radius: 25,
           ),
           SizedBox(width: 12),
           Expanded(
@@ -238,51 +272,20 @@ class _NotificationPageState extends State<NotificationPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '$studentName\'s Stress Level Reached $stressScale',
+                  "$studentName's Stress Level Reached $stressScale",
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 14, // Smaller font size
+                    fontSize: 14,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                SizedBox(height: 6), // Adjusted spacing
+                SizedBox(height: 6),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     TextButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => Studentprofile(
-                              email: widget.userId,
-                              studentEmail: student['email'] ?? 'N/A',
-                              studentId: student['id'], // Student ID
-                              firstname: student['firstname'] ?? 'Unknown',
-                              lastname: student['lastname'] ?? '',
-                              college: student['college'] ?? 'Not Available',
-                              yearLevel: student['year_level'] ?? 'Unknown',
-                            ),
-                          ),
-                        );
-                      },
+                      onPressed: () => navigateToStudentProfile(notification),
                       child: Text('View Profile'),
-                      style: TextButton.styleFrom(
-                        backgroundColor: Color(0xFFCBE2BB),
-                        foregroundColor: Colors.black,
-                      ),
-                    ),
-                    SizedBox(width: 10),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => GuidanceCounselorListPage(),
-                          ),
-                        );
-                      },
-                      child: Text('Message'),
                       style: TextButton.styleFrom(
                         backgroundColor: Color(0xFFCBE2BB),
                         foregroundColor: Colors.black,

@@ -415,8 +415,9 @@ class _StudentlistState extends State<Studentlist> {
                                             MaterialPageRoute(
                                               builder: (context) =>
                                                   Studentprofile(
-                                                email: widget
-                                                    .userId, // Guidance user's email (if needed)
+                                                userId: widget
+                                                    .userId, // Pass the userId here
+                                                email: widget.userId,
                                                 studentEmail:
                                                     student['email'] ?? '',
                                                 studentId:
